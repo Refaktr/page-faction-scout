@@ -2,7 +2,7 @@ import requests
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 
-API_KEY = "HXllpxwbKLz5oGdf"
+API_KEY = "YOUR_API_KEY"
 
 # ----------------------------
 # Colours
