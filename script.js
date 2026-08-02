@@ -48,6 +48,7 @@ const form = document.getElementById("faction-form");
 const factionNameInput = document.getElementById("faction-name");
 const apiKeyInput = document.getElementById("api-key");
 const demoButton = document.getElementById("demo-button");
+const autoRefreshToggle = document.getElementById("auto-refresh-toggle");
 const memberBody = document.getElementById("member-body");
 const factionTitle = document.getElementById("faction-title");
 const memberCount = document.getElementById("member-count");
@@ -56,6 +57,9 @@ const message = document.getElementById("message");
 const sortButtons = Array.from(document.querySelectorAll(".sort-button"));
 
 let currentMembers = [];
+let currentLiveRequest = null;
+let autoRefreshTimerId = null;
+let isRefreshing = false;
 let sortState = {
   key: null,
   direction: "asc"
@@ -78,6 +82,33 @@ function setSummary(name, count, source) {
   factionTitle.textContent = name || "Unknown faction";
   memberCount.textContent = String(count);
   dataSource.textContent = source;
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshTimerId !== null) {
+    window.clearInterval(autoRefreshTimerId);
+    autoRefreshTimerId = null;
+  }
+}
+
+function syncAutoRefreshState() {
+  if (!autoRefreshToggle.checked || !currentLiveRequest) {
+    stopAutoRefresh();
+    return;
+  }
+
+  stopAutoRefresh();
+  autoRefreshTimerId = window.setInterval(() => {
+    refreshLiveRoster(true);
+    console.log("Auto-refresh: updating roster from Torn API...");
+  }, 60000); // Refresh every 60 seconds
+}
+
+function setLiveRequestContext(factionName, apiKey) {
+  currentLiveRequest = {
+    factionName,
+    apiKey
+  };
 }
 
 function statusClass(color) {
@@ -251,7 +282,43 @@ async function loadFactionFromApi(factionName, apiKey) {
   };
 }
 
+async function refreshLiveRoster(silent = false, clearOnError = false) {
+  if (!currentLiveRequest || isRefreshing) {
+    return false;
+  }
+
+  isRefreshing = true;
+
+  if (!silent) {
+    setMessage("Loading roster from Torn API...");
+  }
+
+  try {
+    const data = await loadFactionFromApi(currentLiveRequest.factionName, currentLiveRequest.apiKey);
+    setMembers(data.members);
+    setSummary(data.factionName, data.members.length, "Live API");
+
+    if (!silent) {
+      setMessage("Roster loaded successfully.");
+    }
+    return true;
+  } catch (error) {
+    console.error(error);
+    setMessage(error instanceof Error ? error.message : "Unable to load faction data.");
+    setSummary(currentLiveRequest.factionName, 0, "Error");
+    if (clearOnError) {
+      setMembers([]);
+    }
+    return false;
+  } finally {
+    isRefreshing = false;
+  }
+}
+
 async function showDemoData() {
+  stopAutoRefresh();
+  autoRefreshToggle.checked = false;
+  currentLiveRequest = null;
   setMessage("Rendering demo roster.");
   setMembers(DEMO_DATA.members);
   setSummary(DEMO_DATA.factionName, DEMO_DATA.members.length, "Demo data");
@@ -273,23 +340,40 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  setMessage("Loading roster from Torn API...");
+  setLiveRequestContext(factionName, apiKey);
   setSummary(factionName, "...", "Live API");
 
-  try {
-    const data = await loadFactionFromApi(factionName, apiKey);
-    setMembers(data.members);
-    setSummary(data.factionName, data.members.length, "Live API");
-    setMessage("Roster loaded successfully.");
-  } catch (error) {
-    console.error(error);
-    setMessage(error instanceof Error ? error.message : "Unable to load faction data.");
-    setSummary(factionName, 0, "Error");
-    setMembers([]);
+  const loaded = await refreshLiveRoster(false, true);
+
+  if (!loaded) {
+    return;
+  }
+
+  syncAutoRefreshState();
+  if (autoRefreshToggle.checked) {
+    setMessage("Auto-refresh enabled. Updating every 5 seconds.");
   }
 });
 
 demoButton.addEventListener("click", showDemoData);
+
+autoRefreshToggle.addEventListener("change", () => {
+  if (!autoRefreshToggle.checked) {
+    stopAutoRefresh();
+    setMessage("Auto-refresh disabled.");
+    return;
+  }
+
+  if (!currentLiveRequest) {
+    autoRefreshToggle.checked = false;
+    setMessage("Load a live faction first, then enable auto-refresh.");
+    return;
+  }
+
+  syncAutoRefreshState();
+  setMessage("Auto-refresh enabled. Updating every 60 seconds.");
+  refreshLiveRoster(true);
+});
 
 sortButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -313,5 +397,7 @@ sortButtons.forEach((button) => {
 });
 
 updateSortIndicators();
+
+syncAutoRefreshState();
 
 showDemoData();
