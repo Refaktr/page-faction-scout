@@ -53,6 +53,22 @@ const factionTitle = document.getElementById("faction-title");
 const memberCount = document.getElementById("member-count");
 const dataSource = document.getElementById("data-source");
 const message = document.getElementById("message");
+const sortButtons = Array.from(document.querySelectorAll(".sort-button"));
+
+let currentMembers = [];
+let sortState = {
+  key: null,
+  direction: "asc"
+};
+
+const SORT_LABELS = {
+  name: "Name",
+  level: "Lvl",
+  position: "Position",
+  status: "Status",
+  revive: "Revive",
+  lastAction: "Last Action"
+};
 
 function setMessage(text) {
   message.textContent = text;
@@ -77,7 +93,98 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function renderMembers(members) {
+function parseRelativeTimeToMinutes(value) {
+  const match = String(value ?? "").trim().match(/^(\d+)\s+(minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\s+ago$/i);
+  if (!match) {
+    return Number.NaN;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multipliers = {
+    minute: 1,
+    minutes: 1,
+    hour: 60,
+    hours: 60,
+    day: 1440,
+    days: 1440,
+    week: 10080,
+    weeks: 10080,
+    month: 43200,
+    months: 43200,
+    year: 525600,
+    years: 525600
+  };
+
+  return amount * (multipliers[unit] || 1);
+}
+
+function getSortValue(member, key) {
+  switch (key) {
+    case "name":
+      return String(member?.name ?? "").toLowerCase();
+    case "level":
+      return Number(member?.level ?? 0);
+    case "position":
+      return String(member?.position ?? "").toLowerCase();
+    case "status":
+      return String(member?.status?.description ?? "").toLowerCase();
+    case "revive":
+      return member?.is_revivable ? 1 : 0;
+    case "lastAction": {
+      const relative = String(member?.last_action?.relative ?? "");
+      const minutes = parseRelativeTimeToMinutes(relative);
+      return Number.isNaN(minutes) ? relative.toLowerCase() : minutes;
+    }
+    default:
+      return "";
+  }
+}
+
+function compareValues(a, b) {
+  if (typeof a === "number" && typeof b === "number") {
+    return a - b;
+  }
+
+  return String(a).localeCompare(String(b));
+}
+
+function getSortedMembers() {
+  const members = [...currentMembers];
+
+  if (!sortState.key) {
+    return members;
+  }
+
+  return members.sort((first, second) => {
+    const firstValue = getSortValue(first, sortState.key);
+    const secondValue = getSortValue(second, sortState.key);
+    const base = compareValues(firstValue, secondValue);
+    return sortState.direction === "asc" ? base : -base;
+  });
+}
+
+function updateSortIndicators() {
+  sortButtons.forEach((button) => {
+    const th = button.closest("th");
+    const key = button.dataset.sortKey;
+    const isActive = key === sortState.key;
+    const direction = isActive ? sortState.direction : "none";
+
+    button.dataset.direction = direction;
+    button.setAttribute("aria-label", isActive
+      ? `${SORT_LABELS[key] || key}, sorted ${direction}. Click to toggle order.`
+      : `${SORT_LABELS[key] || key}, not sorted. Click to sort ascending.`);
+
+    if (th) {
+      th.setAttribute("aria-sort", isActive ? (direction === "asc" ? "ascending" : "descending") : "none");
+    }
+  });
+}
+
+function renderMembers() {
+  const members = getSortedMembers();
+
   if (!members.length) {
     memberBody.innerHTML = '<tr class="empty-row"><td colspan="6">No members found.</td></tr>';
     return;
@@ -100,6 +207,11 @@ function renderMembers(members) {
       `;
     })
     .join("");
+}
+
+function setMembers(members) {
+  currentMembers = Array.isArray(members) ? [...members] : [];
+  renderMembers();
 }
 
 async function loadFactionFromApi(factionName, apiKey) {
@@ -141,7 +253,7 @@ async function loadFactionFromApi(factionName, apiKey) {
 
 async function showDemoData() {
   setMessage("Rendering demo roster.");
-  renderMembers(DEMO_DATA.members);
+  setMembers(DEMO_DATA.members);
   setSummary(DEMO_DATA.factionName, DEMO_DATA.members.length, "Demo data");
 }
 
@@ -166,17 +278,40 @@ form.addEventListener("submit", async (event) => {
 
   try {
     const data = await loadFactionFromApi(factionName, apiKey);
-    renderMembers(data.members);
+    setMembers(data.members);
     setSummary(data.factionName, data.members.length, "Live API");
     setMessage("Roster loaded successfully.");
   } catch (error) {
     console.error(error);
     setMessage(error instanceof Error ? error.message : "Unable to load faction data.");
     setSummary(factionName, 0, "Error");
-    memberBody.innerHTML = '<tr class="empty-row"><td colspan="6">No roster loaded yet.</td></tr>';
+    setMembers([]);
   }
 });
 
 demoButton.addEventListener("click", showDemoData);
+
+sortButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const key = button.dataset.sortKey;
+    if (!key) {
+      return;
+    }
+
+    if (sortState.key === key) {
+      sortState.direction = sortState.direction === "asc" ? "desc" : "asc";
+    } else {
+      sortState = {
+        key,
+        direction: "asc"
+      };
+    }
+
+    updateSortIndicators();
+    renderMembers();
+  });
+});
+
+updateSortIndicators();
 
 showDemoData();

@@ -288,6 +288,43 @@ thead th {
   z-index: 1;
 }
 
+.sort-button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+}
+
+.sort-button::after {
+  content: "\2195";
+  font-size: 0.82rem;
+  color: rgba(223, 233, 241, 0.45);
+}
+
+.sort-button[data-direction="asc"]::after {
+  content: "\2191";
+  color: var(--accent-strong);
+}
+
+.sort-button[data-direction="desc"]::after {
+  content: "\2193";
+  color: var(--accent-strong);
+}
+
+.sort-button:focus-visible {
+  outline: 2px solid rgba(132, 220, 255, 0.7);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
 tbody tr {
   background: rgba(255, 255, 255, 0.02);
 }
