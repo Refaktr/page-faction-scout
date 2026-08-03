@@ -101,7 +101,7 @@ function syncAutoRefreshState() {
   autoRefreshTimerId = window.setInterval(() => {
     refreshLiveRoster(true);
     console.log("Auto-refresh: updating roster from Torn API...");
-  }, 60000); // Refresh every 60 seconds
+  }, 5000); // Refresh every 5 seconds
 }
 
 function setLiveRequestContext(factionName, apiKey) {
@@ -371,7 +371,7 @@ autoRefreshToggle.addEventListener("change", () => {
   }
 
   syncAutoRefreshState();
-  setMessage("Auto-refresh enabled. Updating every 60 seconds.");
+  setMessage("Auto-refresh enabled. Updating every  seconds.");
   refreshLiveRoster(true);
 });
 
