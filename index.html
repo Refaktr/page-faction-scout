@@ -9,6 +9,8 @@
 </head>
 <body>
   <div class="shell">
+    <div id="notification-stack" class="notification-stack" aria-live="polite" aria-atomic="true"></div>
+
     <header class="hero">
       <div>
         <p class="eyebrow">Torn Faction Scout</p>
@@ -44,12 +46,21 @@
             <input id="api-key" name="apiKey" type="password" placeholder="Public Access Key required.">
           </label>
 
+          <label>
+            <span>FFScouter API key</span>
+            <input id="ffscouter-api-key" name="ffscouterApiKey" type="password" placeholder="Optional, enables Fair Fight data.">
+          </label>
+
           <div class="button-row">
             <button type="submit" class="primary">Load faction</button>
             <button type="button" id="demo-button" class="secondary">Load demo data</button>
             <label class="toggle-row" for="auto-refresh-toggle">
               <input id="auto-refresh-toggle" type="checkbox">
               <span>Auto-refresh every 5s</span>
+            </label>
+            <label class="toggle-row" for="ultrawide-toggle">
+              <input id="ultrawide-toggle" type="checkbox">
+              <span>Ultrawide layout</span>
             </label>
           </div>
         </form>
@@ -82,11 +93,12 @@
                 <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="status">Status</button></th>
                 <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="revive">Revive</button></th>
                 <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="lastAction">Last Action</button></th>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="fairFight">Fair Fight</button></th>
               </tr>
             </thead>
             <tbody id="member-body">
               <tr class="empty-row">
-                <td colspan="6">No roster loaded yet.</td>
+                <td colspan="7">No roster loaded yet.</td>
               </tr>
             </tbody>
           </table>

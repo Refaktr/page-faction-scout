@@ -47,19 +47,25 @@ const DEMO_DATA = {
 const form = document.getElementById("faction-form");
 const factionNameInput = document.getElementById("faction-name");
 const apiKeyInput = document.getElementById("api-key");
+const ffscouterApiKeyInput = document.getElementById("ffscouter-api-key");
 const demoButton = document.getElementById("demo-button");
 const autoRefreshToggle = document.getElementById("auto-refresh-toggle");
+const ultrawideToggle = document.getElementById("ultrawide-toggle");
 const memberBody = document.getElementById("member-body");
 const factionTitle = document.getElementById("faction-title");
 const memberCount = document.getElementById("member-count");
 const dataSource = document.getElementById("data-source");
 const message = document.getElementById("message");
+const notificationStack = document.getElementById("notification-stack");
 const sortButtons = Array.from(document.querySelectorAll(".sort-button"));
 
 let currentMembers = [];
 let currentLiveRequest = null;
 let autoRefreshTimerId = null;
 let isRefreshing = false;
+let lastRosterSnapshot = [];
+let fairFightMap = {};
+let fairFightLoadedForFaction = null;
 let sortState = {
   key: null,
   direction: "asc"
@@ -71,11 +77,162 @@ const SORT_LABELS = {
   position: "Position",
   status: "Status",
   revive: "Revive",
-  lastAction: "Last Action"
+  lastAction: "Last Action",
+  fairFight: "Fair Fight"
 };
+
+const ULTRAWIDE_STORAGE_KEY = "faction-scout-ultrawide";
 
 function setMessage(text) {
   message.textContent = text;
+}
+
+function formatAircraftType(value) {
+  const normalized = String(value ?? "").toLowerCase().replace(/[^a-z]+/g, "_").replace(/^_|_$/g, "");
+  const labelMap = {
+    light_aircraft: "Light aircraft",
+    heavy_aircraft: "Heavy aircraft",
+    private_jet: "Private jet",
+    helicopter: "Helicopter",
+    plane: "Plane"
+  };
+
+  return labelMap[normalized] || (normalized ? normalized.replace(/_/g, " ") : "Unknown aircraft");
+}
+
+function getTravelingInfo(member) {
+  const status = member?.status || {};
+  const state = String(status.state ?? "").trim().toLowerCase();
+  const description = String(status.description ?? "").trim();
+  const isTraveling = state === "traveling" || /traveling/i.test(description);
+
+  if (!isTraveling) {
+    return null;
+  }
+
+  const fromToMatch = description.match(/traveling from\s+(.+?)\s+to\s+(.+)/i) || description.match(/from\s+(.+?)\s+to\s+(.+)/i);
+  const from = fromToMatch?.[1]?.trim() || "an unknown location";
+  const to = fromToMatch?.[2]?.trim() || "a new destination";
+
+  return {
+    from,
+    to,
+    aircraft: formatAircraftType(status.plane_image_type || status.aircraft_type || status.plane_type),
+    description
+  };
+}
+
+function showToast(title, detail) {
+  if (!notificationStack) {
+    return;
+  }
+
+  const timestamp = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+
+  const toast = document.createElement("div");
+  toast.className = "notification";
+  toast.innerHTML = `
+    <strong>${escapeHtml(title)}</strong>
+    <span>${escapeHtml(detail)}</span>
+    <div class="notification-meta">
+      <span>Pinged at ${escapeHtml(timestamp)}</span>
+    </div>
+  `;
+
+  toast.addEventListener("click", () => toast.remove());
+
+  notificationStack.appendChild(toast);
+}
+
+let notificationPermissionRequested = false;
+
+function requestNotificationPermission() {
+  if (typeof window.Notification === "undefined" || notificationPermissionRequested) {
+    return;
+  }
+
+  if (window.Notification.permission === "default") {
+    notificationPermissionRequested = true;
+    window.Notification.requestPermission().catch(() => undefined);
+  }
+}
+
+function notifyTravelStatusChange(member, previousMember) {
+  const currentTravel = getTravelingInfo(member);
+  const previousTravel = getTravelingInfo(previousMember);
+
+  if (!currentTravel) {
+    return;
+  }
+
+  const changed = !previousTravel || previousTravel.description !== currentTravel.description || previousTravel.from !== currentTravel.from || previousTravel.to !== currentTravel.to;
+
+  if (!changed) {
+    return;
+  }
+
+  const title = `${member.name} is moving`;
+  const detail = `${currentTravel.from} → ${currentTravel.to} • Aircraft: ${currentTravel.aircraft}`;
+
+  showToast(title, detail);
+  requestNotificationPermission();
+
+  if (typeof window.Notification !== "undefined" && window.Notification.permission === "granted") {
+    new window.Notification(title, {
+      body: detail,
+      icon: "https://cdn.jsdelivr.net/gh/twitter/twirpz@master/assets/emoji/airplane.png"
+    });
+  }
+}
+
+function compareRosterSnapshots(previousMembers, currentMembers) {
+  const previousByKey = new Map();
+
+  previousMembers.forEach((member) => {
+    const key = String(member?.id ?? member?.name ?? "");
+    previousByKey.set(key, member);
+  });
+
+  currentMembers.forEach((member) => {
+    const key = String(member?.id ?? member?.name ?? "");
+    const previousMember = previousByKey.get(key);
+    notifyTravelStatusChange(member, previousMember);
+  });
+}
+
+function applyUltrawideMode(enabled) {
+  document.body.classList.toggle("ultrawide", enabled);
+  if (ultrawideToggle) {
+    ultrawideToggle.checked = enabled;
+  }
+
+  try {
+    localStorage.setItem(ULTRAWIDE_STORAGE_KEY, enabled ? "1" : "0");
+  } catch (error) {
+    console.warn("Unable to persist ultrawide preference.", error);
+  }
+}
+
+function initUltrawideMode() {
+  if (!ultrawideToggle) {
+    return;
+  }
+
+  try {
+    const savedValue = localStorage.getItem(ULTRAWIDE_STORAGE_KEY) === "1";
+    applyUltrawideMode(savedValue);
+  } catch (error) {
+    applyUltrawideMode(false);
+  }
+
+  ultrawideToggle.addEventListener("change", (event) => {
+    applyUltrawideMode(event.target.checked);
+    setMessage(event.target.checked ? "Ultrawide layout enabled." : "Ultrawide layout disabled.");
+  });
 }
 
 function setSummary(name, count, source) {
@@ -92,16 +249,20 @@ function stopAutoRefresh() {
 }
 
 function syncAutoRefreshState() {
-  if (!autoRefreshToggle.checked || !currentLiveRequest) {
+  if (!autoRefreshToggle.checked) {
     stopAutoRefresh();
     return;
   }
 
   stopAutoRefresh();
   autoRefreshTimerId = window.setInterval(() => {
-    refreshLiveRoster(true);
-    console.log("Auto-refresh: updating roster from Torn API...");
-  }, 5000); // Refresh every 5 seconds
+    if (currentLiveRequest) {
+      refreshLiveRoster(true);
+    } else {
+      showDemoData(true);
+    }
+    console.log("Auto-refresh executed at", new Date().toLocaleTimeString());
+  }, 5000);
 }
 
 function setLiveRequestContext(factionName, apiKey) {
@@ -167,6 +328,10 @@ function getSortValue(member, key) {
       const minutes = parseRelativeTimeToMinutes(relative);
       return Number.isNaN(minutes) ? relative.toLowerCase() : minutes;
     }
+    case "fairFight": {
+      const entry = fairFightMap[member?.id];
+      return typeof entry?.fairFight === "number" ? entry.fairFight : -1;
+    }
     default:
       return "";
   }
@@ -213,11 +378,23 @@ function updateSortIndicators() {
   });
 }
 
+function formatFairFight(member) {
+  const entry = fairFightMap[member?.id];
+
+  if (!entry || (entry.fairFight == null && !entry.bsEstimateHuman)) {
+    return "";
+  }
+
+  const fairFightText = typeof entry.fairFight === "number" ? entry.fairFight.toFixed(2) : "?";
+  const bsText = entry.bsEstimateHuman || "?";
+  return `${fairFightText} (${bsText})`;
+}
+
 function renderMembers() {
   const members = getSortedMembers();
 
   if (!members.length) {
-    memberBody.innerHTML = '<tr class="empty-row"><td colspan="6">No members found.</td></tr>';
+    memberBody.innerHTML = '<tr class="empty-row"><td colspan="7">No members found.</td></tr>';
     return;
   }
 
@@ -234,6 +411,7 @@ function renderMembers() {
           <td><span class="status-badge ${statusClass(status.color)}">${escapeHtml(status.description ?? "")}</span></td>
           <td>${revive}</td>
           <td>${escapeHtml(member.last_action?.relative ?? "")}</td>
+          <td>${escapeHtml(formatFairFight(member))}</td>
         </tr>
       `;
     })
@@ -243,6 +421,10 @@ function renderMembers() {
 function setMembers(members) {
   currentMembers = Array.isArray(members) ? [...members] : [];
   renderMembers();
+}
+
+function loadDemoData() {
+  return DEMO_DATA;
 }
 
 async function loadFactionFromApi(factionName, apiKey) {
@@ -282,6 +464,68 @@ async function loadFactionFromApi(factionName, apiKey) {
   };
 }
 
+async function getFairFightData(userIdArray, apiKey) {
+  if (!Array.isArray(userIdArray) || !userIdArray.length) {
+    console.log("getFairFightData: no user IDs supplied, skipping fetch.");
+    return {};
+  }
+
+  const targets = userIdArray.join(",");
+  const url = `https://ffscouter.com/api/v1/get-stats?key=${encodeURIComponent(apiKey)}&targets=${encodeURIComponent(targets)}`;
+  console.log(`getFairFightData: fetching fair fight data for ${userIdArray.length} member(s)...`, url);
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Fair fight lookup failed (${response.status})`);
+  }
+
+  const data = await response.json();
+  console.log("getFairFightData: received response.", data);
+
+  const fairFightById = {};
+
+  (Array.isArray(data) ? data : []).forEach((entry) => {
+    if (entry?.player_id == null) {
+      return;
+    }
+
+    fairFightById[entry.player_id] = {
+      fairFight: typeof entry.fair_fight === "number" ? entry.fair_fight : null,
+      bsEstimateHuman: entry.bs_estimate_human ?? null
+    };
+  });
+
+  console.log(`getFairFightData: mapped ${Object.keys(fairFightById).length} player(s).`, fairFightById);
+  return fairFightById;
+}
+
+async function loadFairFightForFaction(factionName, members, apiKey) {
+  if (fairFightLoadedForFaction === factionName) {
+    console.log(`loadFairFightForFaction: already loaded for "${factionName}", skipping.`);
+    return;
+  }
+
+  const ids = members.map((member) => member?.id).filter((id) => id !== undefined && id !== null);
+
+  if (!ids.length) {
+    console.log("loadFairFightForFaction: no member IDs available (demo data has no IDs), skipping.");
+    return;
+  }
+
+  fairFightLoadedForFaction = factionName;
+
+  try {
+    fairFightMap = await getFairFightData(ids, apiKey);
+    console.log("loadFairFightForFaction: fair fight data applied, re-rendering table.");
+    renderMembers();
+  } catch (error) {
+    console.error("loadFairFightForFaction: failed to load fair fight data.", error);
+    fairFightLoadedForFaction = null;
+    showToast("Fair fight data unavailable", error instanceof Error ? error.message : "Unknown error");
+  }
+}
+
 async function refreshLiveRoster(silent = false, clearOnError = false) {
   if (!currentLiveRequest || isRefreshing) {
     return false;
@@ -295,8 +539,11 @@ async function refreshLiveRoster(silent = false, clearOnError = false) {
 
   try {
     const data = await loadFactionFromApi(currentLiveRequest.factionName, currentLiveRequest.apiKey);
+    const previousMembers = [...lastRosterSnapshot];
     setMembers(data.members);
     setSummary(data.factionName, data.members.length, "Live API");
+    compareRosterSnapshots(previousMembers, data.members);
+    lastRosterSnapshot = data.members.map((member) => ({ ...member }));
 
     if (!silent) {
       setMessage("Roster loaded successfully.");
@@ -315,13 +562,21 @@ async function refreshLiveRoster(silent = false, clearOnError = false) {
   }
 }
 
-async function showDemoData() {
-  stopAutoRefresh();
-  autoRefreshToggle.checked = false;
-  currentLiveRequest = null;
-  setMessage("Rendering demo roster.");
-  setMembers(DEMO_DATA.members);
-  setSummary(DEMO_DATA.factionName, DEMO_DATA.members.length, "Demo data");
+function showDemoData(silent = false) {
+  if (!silent) {
+    setMessage("Rendering demo roster.");
+  }
+
+  const data = loadDemoData();
+  const previousMembers = [...lastRosterSnapshot];
+  setMembers(data.members);
+  setSummary(data.factionName, data.members.length, "Demo data");
+  compareRosterSnapshots(previousMembers, data.members);
+  lastRosterSnapshot = data.members.map((member) => ({ ...member }));
+
+  if (!silent && !currentLiveRequest) {
+    setMessage("Demo roster loaded.");
+  }
 }
 
 form.addEventListener("submit", async (event) => {
@@ -329,6 +584,7 @@ form.addEventListener("submit", async (event) => {
 
   const factionName = factionNameInput.value.trim();
   const apiKey = apiKeyInput.value.trim();
+  const ffscouterApiKey = ffscouterApiKeyInput.value.trim();
 
   if (!factionName) {
     setMessage("Enter a faction name first.");
@@ -343,10 +599,21 @@ form.addEventListener("submit", async (event) => {
   setLiveRequestContext(factionName, apiKey);
   setSummary(factionName, "...", "Live API");
 
+  if (fairFightLoadedForFaction !== factionName) {
+    fairFightMap = {};
+  }
+
   const loaded = await refreshLiveRoster(false, true);
 
   if (!loaded) {
     return;
+  }
+
+  if (ffscouterApiKey) {
+    console.log(`Faction "${factionName}" loaded with ${currentMembers.length} member(s), triggering fair fight lookup.`);
+    loadFairFightForFaction(factionName, currentMembers, ffscouterApiKey);
+  } else {
+    console.log("No FFScouter API key provided, skipping fair fight lookup.");
   }
 
   syncAutoRefreshState();
@@ -355,7 +622,12 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-demoButton.addEventListener("click", showDemoData);
+demoButton.addEventListener("click", () => {
+  currentLiveRequest = null;
+  fairFightMap = {};
+  fairFightLoadedForFaction = null;
+  showDemoData(false);
+});
 
 autoRefreshToggle.addEventListener("change", () => {
   if (!autoRefreshToggle.checked) {
@@ -364,15 +636,20 @@ autoRefreshToggle.addEventListener("change", () => {
     return;
   }
 
-  if (!currentLiveRequest) {
+  if (!currentLiveRequest && !currentMembers.length) {
     autoRefreshToggle.checked = false;
-    setMessage("Load a live faction first, then enable auto-refresh.");
+    setMessage("Load a live faction or demo roster first, then enable auto-refresh.");
     return;
   }
 
   syncAutoRefreshState();
-  setMessage("Auto-refresh enabled. Updating every  seconds.");
-  refreshLiveRoster(true);
+  setMessage("Auto-refresh enabled. Updating every 5 seconds.");
+
+  if (currentLiveRequest) {
+    refreshLiveRoster(true);
+  } else {
+    showDemoData(true);
+  }
 });
 
 sortButtons.forEach((button) => {
@@ -397,7 +674,8 @@ sortButtons.forEach((button) => {
 });
 
 updateSortIndicators();
+initUltrawideMode();
 
 syncAutoRefreshState();
 
-showDemoData();
+showDemoData(true);
