@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Faction roster dashboard inspired by the Torn faction scout script.">
+  <title>Faction Scout</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="shell">
+    <div id="notification-stack" class="notification-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Torn Faction Scout</p>
+        <h1>Faction member roster with live status color-coding.</h1>
+        <p class="lede">
+          Search a faction, load member details, and inspect position, status, revive eligibility,
+          and last action in a clean dashboard built for GitHub Pages.
+        </p>
+      </div>
+      <div class="hero-card">
+        <div class="hero-card-label">Columns from the script</div>
+        <ul>
+          <li>Name</li>
+          <li>Level</li>
+          <li>Position</li>
+          <li>Status</li>
+          <li>Revive</li>
+          <li>Last Action</li>
+        </ul>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel controls">
+        <form id="faction-form" class="form-grid">
+          <label>
+            <span>Faction name</span>
+            <input id="faction-name" name="factionName" type="text" placeholder="Enter a faction name">
+          </label>
+
+          <label>
+            <span>Torn API key</span>
+            <input id="api-key" name="apiKey" type="password" placeholder="Public Access Key required.">
+          </label>
+
+          <label>
+            <span>FFScouter API key</span>
+            <input id="ffscouter-api-key" name="ffscouterApiKey" type="password" placeholder="Optional, enables Fair Fight data.">
+          </label>
+
+          <div class="button-row">
+            <button type="submit" class="primary">Load faction</button>
+            <button type="button" id="demo-button" class="secondary">Load demo data</button>
+            <label class="toggle-row" for="auto-refresh-toggle">
+              <input id="auto-refresh-toggle" type="checkbox">
+              <span>Auto-refresh every 5s</span>
+            </label>
+            <label class="toggle-row" for="ultrawide-toggle">
+              <input id="ultrawide-toggle" type="checkbox">
+              <span>Ultrawide layout</span>
+            </label>
+          </div>
+        </form>
+
+        <p class="note">
+          Static GitHub Pages cannot safely hide secrets, so the API key is entered in the page at runtime.
+          The demo view works without any API access.
+        </p>
+      </section>
+
+      <section class="panel status-strip">
+        <div><span class="label">Faction</span><strong id="faction-title">Warband of the Fallen</strong></div>
+        <div><span class="label">Members</span><strong id="member-count">0</strong></div>
+        <div><span class="label">Source</span><strong id="data-source">Demo data</strong></div>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="table-toolbar">
+          <h2>Roster</h2>
+          <span id="message" class="message">Load a faction to begin.</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="name">Name</button></th>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="level">Lvl</button></th>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="position">Position</button></th>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="status">Status</button></th>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="revive">Revive</button></th>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="lastAction">Last Action</button></th>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="fairFight">Fair Fight</button></th>
+              </tr>
+            </thead>
+            <tbody id="member-body">
+              <tr class="empty-row">
+                <td colspan="7">No roster loaded yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
