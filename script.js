@@ -75,6 +75,7 @@ let fairFightLoadedForFaction = null;
 let activeFilter = "all";
 let claims = {};
 let remoteMode = false;
+let claimPollTimerId = null;
 let sortState = {
   key: null,
   direction: "asc"
@@ -91,6 +92,7 @@ const ULTRAWIDE_STORAGE_KEY = "faction-scout-ultrawide";
 const CALLSIGN_STORAGE_KEY = "dibbs-callsign";
 const CLAIMS_STORAGE_PREFIX = "dibbs-claims-";
 const ROOM_PASSWORD_STORAGE_PREFIX = "dibbs-room-password-";
+const CLAIM_POLL_INTERVAL_MS = 10000;
 
 function setMessage(text) {
   message.textContent = text;
@@ -178,6 +180,33 @@ async function loadRemoteClaims() {
       claimedAt: new Date(claim.claimed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     };
   });
+}
+
+function stopClaimPolling() {
+  if (claimPollTimerId !== null) {
+    window.clearInterval(claimPollTimerId);
+    claimPollTimerId = null;
+  }
+}
+
+function startClaimPolling() {
+  stopClaimPolling();
+  claimPollTimerId = window.setInterval(async () => {
+    if (!remoteMode || document.hidden) {
+      return;
+    }
+
+    try {
+      await loadRemoteClaims();
+      renderMembers();
+    } catch (error) {
+      console.warn("Shared dibs refresh failed.", error);
+      if (error instanceof Error && /password|required|not found/i.test(error.message)) {
+        stopClaimPolling();
+        setMessage("Shared dibs refresh stopped. Re-enter the war room.");
+      }
+    }
+  }, CLAIM_POLL_INTERVAL_MS);
 }
 
 async function loadFactionFromApi(factionName, apiKey) {
@@ -592,6 +621,7 @@ async function loadFairFightForFaction(factionName, members, apiKey) {
 }
 
 function showDemoData(silent = false) {
+  stopClaimPolling();
   remoteMode = false;
   if (!silent) {
     setMessage("Rendering demo roster.");
@@ -632,6 +662,7 @@ form.addEventListener("submit", async (event) => {
     lastRosterSnapshot = members.map((member) => ({ ...member }));
     sessionStorage.setItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${getRoomSlug()}`, getRoomPassword());
     setMessage("Shared war room loaded.");
+    startClaimPolling();
   } catch (error) {
     remoteMode = false;
     setMessage(error instanceof Error ? error.message : "Unable to load the war room.");
@@ -687,6 +718,13 @@ memberBody.addEventListener("click", async (event) => {
       setMessage(`${member.name} is called by ${callsign}.`);
     }
   } catch (error) {
+    if (remoteMode) {
+      try {
+        await loadRemoteClaims();
+      } catch (refreshError) {
+        console.warn("Unable to refresh shared dibs after an update failure.", refreshError);
+      }
+    }
     setMessage(error instanceof Error ? error.message : "Unable to update dibs.");
   }
 
