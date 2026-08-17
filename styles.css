@@ -162,9 +162,13 @@ main {
 
 .form-grid {
   display: grid;
-  grid-template-columns: 1.2fr 1fr auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   align-items: end;
+}
+
+.form-grid > label {
+  min-width: 0;
 }
 
 label {
@@ -186,25 +190,34 @@ button {
 
 input {
   width: 100%;
+  min-width: 0;
+  height: 48px;
   padding: 14px 16px;
-  border-radius: 14px;
+  border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.09);
   background: rgba(7, 10, 14, 0.65);
   color: var(--text);
   outline: none;
-  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
 input:focus {
-  border-color: rgba(90, 200, 250, 0.7);
-  box-shadow: 0 0 0 4px rgba(90, 200, 250, 0.12);
+  border-color: rgba(255, 184, 74, 0.75);
+  background: rgba(7, 10, 14, 0.9);
+  box-shadow: 0 0 0 4px rgba(255, 184, 74, 0.14);
+}
+
+input::placeholder {
+  color: rgba(159, 176, 191, 0.58);
 }
 
 .button-row {
   display: flex;
+  grid-column: 1 / -1;
   gap: 10px;
   flex-wrap: wrap;
   align-items: center;
+  padding-top: 2px;
 }
 
 .toggle-row {
@@ -272,7 +285,7 @@ body.ultrawide .status-strip {
 }
 
 body.ultrawide .form-grid {
-  grid-template-columns: 1.15fr 1fr auto auto;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 body.ultrawide .status-strip {
