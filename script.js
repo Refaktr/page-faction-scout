@@ -63,13 +63,11 @@ const dataSource = document.getElementById("data-source");
 const openCount = document.getElementById("open-count");
 const claimedCount = document.getElementById("claimed-count");
 const message = document.getElementById("message");
-const notificationStack = document.getElementById("notification-stack");
 const sortButtons = Array.from(document.querySelectorAll(".sort-button"));
 const filterButtons = Array.from(document.querySelectorAll(".filter-button"));
 const targetSearch = document.getElementById("target-search");
 
 let currentMembers = [];
-let lastRosterSnapshot = [];
 let fairFightMap = {};
 let fairFightLoadedForFaction = null;
 let activeFilter = "all";
@@ -244,123 +242,6 @@ function getVisibleMembers() {
       || (activeFilter === "mine" && claim?.claimedBy === getCallsign());
     const searchText = `${member.name ?? ""} ${member.position ?? ""} ${member.status?.description ?? ""}`.toLowerCase();
     return matchesFilter && (!query || searchText.includes(query));
-  });
-}
-
-function formatAircraftType(value) {
-  const normalized = String(value ?? "").toLowerCase().replace(/[^a-z]+/g, "_").replace(/^_|_$/g, "");
-  const labelMap = {
-    light_aircraft: "Light aircraft",
-    heavy_aircraft: "Heavy aircraft",
-    private_jet: "Private jet",
-    helicopter: "Helicopter",
-    plane: "Plane"
-  };
-
-  return labelMap[normalized] || (normalized ? normalized.replace(/_/g, " ") : "Unknown aircraft");
-}
-
-function getTravelingInfo(member) {
-  const status = member?.status || {};
-  const state = String(status.state ?? "").trim().toLowerCase();
-  const description = String(status.description ?? "").trim();
-  const isTraveling = state === "traveling" || /traveling/i.test(description);
-
-  if (!isTraveling) {
-    return null;
-  }
-
-  const fromToMatch = description.match(/traveling from\s+(.+?)\s+to\s+(.+)/i) || description.match(/from\s+(.+?)\s+to\s+(.+)/i);
-  const from = fromToMatch?.[1]?.trim() || "an unknown location";
-  const to = fromToMatch?.[2]?.trim() || "a new destination";
-
-  return {
-    from,
-    to,
-    aircraft: formatAircraftType(status.plane_image_type || status.aircraft_type || status.plane_type),
-    description
-  };
-}
-
-function showToast(title, detail) {
-  if (!notificationStack) {
-    return;
-  }
-
-  const timestamp = new Date().toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit"
-  });
-
-  const toast = document.createElement("div");
-  toast.className = "notification";
-  toast.innerHTML = `
-    <strong>${escapeHtml(title)}</strong>
-    <span>${escapeHtml(detail)}</span>
-    <div class="notification-meta">
-      <span>Pinged at ${escapeHtml(timestamp)}</span>
-    </div>
-  `;
-
-  toast.addEventListener("click", () => toast.remove());
-
-  notificationStack.appendChild(toast);
-}
-
-let notificationPermissionRequested = false;
-
-function requestNotificationPermission() {
-  if (typeof window.Notification === "undefined" || notificationPermissionRequested) {
-    return;
-  }
-
-  if (window.Notification.permission === "default") {
-    notificationPermissionRequested = true;
-    window.Notification.requestPermission().catch(() => undefined);
-  }
-}
-
-function notifyTravelStatusChange(member, previousMember) {
-  const currentTravel = getTravelingInfo(member);
-  const previousTravel = getTravelingInfo(previousMember);
-
-  if (!currentTravel) {
-    return;
-  }
-
-  const changed = !previousTravel || previousTravel.description !== currentTravel.description || previousTravel.from !== currentTravel.from || previousTravel.to !== currentTravel.to;
-
-  if (!changed) {
-    return;
-  }
-
-  const title = `${member.name} is moving`;
-  const detail = `${currentTravel.from} → ${currentTravel.to} • Aircraft: ${currentTravel.aircraft}`;
-
-  showToast(title, detail);
-  requestNotificationPermission();
-
-  if (typeof window.Notification !== "undefined" && window.Notification.permission === "granted") {
-    new window.Notification(title, {
-      body: detail,
-      icon: "https://cdn.jsdelivr.net/gh/twitter/twirpz@master/assets/emoji/airplane.png"
-    });
-  }
-}
-
-function compareRosterSnapshots(previousMembers, currentMembers) {
-  const previousByKey = new Map();
-
-  previousMembers.forEach((member) => {
-    const key = String(member?.id ?? member?.name ?? "");
-    previousByKey.set(key, member);
-  });
-
-  currentMembers.forEach((member) => {
-    const key = String(member?.id ?? member?.name ?? "");
-    const previousMember = previousByKey.get(key);
-    notifyTravelStatusChange(member, previousMember);
   });
 }
 
@@ -616,7 +497,7 @@ async function loadFairFightForFaction(factionName, members, apiKey) {
   } catch (error) {
     console.error("loadFairFightForFaction: failed to load fair fight data.", error);
     fairFightLoadedForFaction = null;
-    showToast("Fair fight data unavailable", error instanceof Error ? error.message : "Unknown error");
+    setMessage(error instanceof Error ? error.message : "Fair fight data unavailable.");
   }
 }
 
@@ -628,11 +509,8 @@ function showDemoData(silent = false) {
   }
 
   const data = loadDemoData();
-  const previousMembers = [...lastRosterSnapshot];
   setMembers(data.members);
   setSummary(data.factionName, data.members.length, "Demo data");
-  compareRosterSnapshots(previousMembers, data.members);
-  lastRosterSnapshot = data.members.map((member) => ({ ...member }));
 
   if (!silent) {
     setMessage("Demo roster loaded.");
@@ -655,11 +533,8 @@ form.addEventListener("submit", async (event) => {
       loadFactionFromApi(factionName, apiKey),
       loadRemoteClaims()
     ]);
-    const previousMembers = [...lastRosterSnapshot];
     setMembers(members);
     setSummary(factionName, members.length, "Torn + shared dibs");
-    compareRosterSnapshots(previousMembers, members);
-    lastRosterSnapshot = members.map((member) => ({ ...member }));
     sessionStorage.setItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${getRoomSlug()}`, getRoomPassword());
     setMessage("Shared war room loaded.");
     startClaimPolling();
