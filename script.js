@@ -52,6 +52,8 @@ const demoButton = document.getElementById("demo-button");
 const callsignInput = document.getElementById("callsign");
 const roomSlugInput = document.getElementById("room-slug");
 const roomPasswordInput = document.getElementById("room-password");
+const factionNameInput = document.getElementById("faction-name");
+const apiKeyInput = document.getElementById("api-key");
 const autoRefreshToggle = document.getElementById("auto-refresh-toggle");
 const ultrawideToggle = document.getElementById("ultrawide-toggle");
 const memberBody = document.getElementById("member-body");
@@ -163,55 +165,38 @@ async function dibbsApiRequest(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
-function mapRemoteTarget(target) {
-  return {
-    id: target.torn_id ?? target.id,
-    dibbsTargetId: target.id,
-    name: target.name,
-    level: target.level,
-    position: target.position,
-    status: {
-      description: target.status_description || "Unknown",
-      color: target.status_color || "default"
-    },
-    last_action: { relative: target.last_action || "Unknown" },
-    remoteClaim: target.callsign
-      ? { claimedBy: target.callsign, claimedAt: new Date(target.claimed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }
-      : null
-  };
-}
-
-async function loadRemoteWarRoom() {
+async function loadRemoteClaims() {
   if (!remoteApiConfigured) {
     throw new Error("The Render API URL has not been configured.");
   }
 
-  const targetData = await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/targets`);
-  const remoteMembers = targetData.targets.map(mapRemoteTarget);
+  const claimData = await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/claims`);
   claims = {};
-  remoteMembers.forEach((member) => {
-    if (member.remoteClaim) {
-      claims[getMemberKey(member)] = {
-        ...member.remoteClaim,
-        remoteTargetId: member.dibbsTargetId
-      };
-    }
+  claimData.claims.forEach((claim) => {
+    claims[String(claim.torn_id)] = {
+      claimedBy: claim.callsign,
+      claimedAt: new Date(claim.claimed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    };
   });
-  return remoteMembers;
 }
 
-async function loadRemoteClaims() {
-  const targetData = await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/targets`);
-  claims = {};
-  targetData.targets.forEach((target) => {
-    if (target.callsign) {
-      claims[String(target.torn_id ?? target.id)] = {
-        claimedBy: target.callsign,
-        claimedAt: new Date(target.claimed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        remoteTargetId: target.id
-      };
-    }
-  });
+async function loadFactionFromApi(factionName, apiKey) {
+  const headers = { Accept: "application/json", Authorization: `ApiKey ${apiKey}` };
+  const searchResponse = await fetch(`https://api.torn.com/v2/faction/search?name=${encodeURIComponent(factionName)}`, { headers });
+  if (!searchResponse.ok) {
+    throw new Error(`Faction search failed (${searchResponse.status}).`);
+  }
+  const searchData = await searchResponse.json();
+  const factionId = searchData?.search?.[0]?.id;
+  if (!factionId) {
+    throw new Error("No faction match found.");
+  }
+  const membersResponse = await fetch(`https://api.torn.com/v2/faction/${factionId}/members`, { headers });
+  if (!membersResponse.ok) {
+    throw new Error(`Member lookup failed (${membersResponse.status}).`);
+  }
+  const membersData = await membersResponse.json();
+  return Object.values(membersData?.members || {});
 }
 
 function updateClaimSummary() {
@@ -627,17 +612,22 @@ function showDemoData(silent = false) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  if (!getRoomPassword()) {
-    setMessage("Enter the war room password first.");
+  const factionName = factionNameInput.value.trim();
+  const apiKey = apiKeyInput.value.trim();
+  if (!getRoomSlug() || !getRoomPassword() || !factionName || !apiKey) {
+    setMessage("Enter a room, room password, faction name, and Torn API key.");
     return;
   }
 
   try {
     remoteMode = true;
-    const members = await loadRemoteWarRoom();
+    const [members] = await Promise.all([
+      loadFactionFromApi(factionName, apiKey),
+      loadRemoteClaims()
+    ]);
     const previousMembers = [...lastRosterSnapshot];
     setMembers(members);
-    setSummary("Faction War", members.length, "Shared war room");
+    setSummary(factionName, members.length, "Torn + shared dibs");
     compareRosterSnapshots(previousMembers, members);
     lastRosterSnapshot = members.map((member) => ({ ...member }));
     sessionStorage.setItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${getRoomSlug()}`, getRoomPassword());
@@ -670,13 +660,13 @@ memberBody.addEventListener("click", async (event) => {
     if (remoteMode) {
       const claim = claims[memberKey];
       if (actionButton.classList.contains("release-button")) {
-        await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/targets/${claim.remoteTargetId}/claim`, {
+        await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/claims/${encodeURIComponent(member.id)}`, {
           method: "DELETE",
           body: JSON.stringify({ callsign: getCallsign() })
         });
         setMessage(`${member.name} is back in the open queue.`);
       } else {
-        await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/targets/${member.dibbsTargetId}/claim`, {
+        await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/claims/${encodeURIComponent(member.id)}`, {
           method: "POST",
           body: JSON.stringify({ callsign: getCallsign() })
         });

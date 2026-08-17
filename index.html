@@ -47,6 +47,14 @@
             <span>War room password</span>
             <input id="room-password" name="roomPassword" type="password" placeholder="Provided by your war lead" autocomplete="current-password">
           </label>
+          <label>
+            <span>Enemy faction</span>
+            <input id="faction-name" name="factionName" type="text" placeholder="Faction to scout" required>
+          </label>
+          <label>
+            <span>Your Torn API key</span>
+            <input id="api-key" name="apiKey" type="password" placeholder="Used only in your browser" autocomplete="off" required>
+          </label>
 
           <div class="button-row">
             <button type="submit" class="primary">Enter war room</button>
@@ -59,8 +67,8 @@
         </form>
 
         <p class="note">
-          The war lead sets up and refreshes the target roster separately. Your room password grants
-          access to the live shared board; it is never stored in the page source.
+          Your browser uses your Torn key to fetch the roster. The shared board stores only who has
+          called dibs on each Torn player ID; it never receives or saves your Torn key.
         </p>
       </section>
 
