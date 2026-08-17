@@ -1,11 +1,3 @@
-const STATUS_CLASS_MAP = {
-  green: "status-green",
-  red: "status-red",
-  blue: "status-blue",
-  orange: "status-orange",
-  yellow: "status-yellow"
-};
-
 const DIBBS_API_BASE_URL = "https://dibbs-api-upc8.onrender.com";
 const remoteApiConfigured = !DIBBS_API_BASE_URL.includes("REPLACE_WITH_YOUR_RENDER_SERVICE");
 
@@ -55,7 +47,6 @@ const roomPasswordInput = document.getElementById("room-password");
 const factionNameInput = document.getElementById("faction-name");
 const apiKeyInput = document.getElementById("api-key");
 const autoRefreshToggle = document.getElementById("auto-refresh-toggle");
-const ultrawideToggle = document.getElementById("ultrawide-toggle");
 const memberBody = document.getElementById("member-body");
 const factionTitle = document.getElementById("faction-title");
 const memberCount = document.getElementById("member-count");
@@ -81,12 +72,9 @@ let sortState = {
 
 const SORT_LABELS = {
   name: "Name",
-  level: "Lvl",
-  status: "Status",
   fairFight: "Fair Fight"
 };
 
-const ULTRAWIDE_STORAGE_KEY = "faction-scout-ultrawide";
 const CALLSIGN_STORAGE_KEY = "dibbs-callsign";
 const CLAIMS_STORAGE_PREFIX = "dibbs-claims-";
 const ROOM_PASSWORD_STORAGE_PREFIX = "dibbs-room-password-";
@@ -240,39 +228,8 @@ function getVisibleMembers() {
     const matchesFilter = activeFilter === "all"
       || (activeFilter === "open" && !claim)
       || (activeFilter === "mine" && claim?.claimedBy === getCallsign());
-    const searchText = `${member.name ?? ""} ${member.position ?? ""} ${member.status?.description ?? ""}`.toLowerCase();
+    const searchText = String(member.name ?? "").toLowerCase();
     return matchesFilter && (!query || searchText.includes(query));
-  });
-}
-
-function applyUltrawideMode(enabled) {
-  document.body.classList.toggle("ultrawide", enabled);
-  if (ultrawideToggle) {
-    ultrawideToggle.checked = enabled;
-  }
-
-  try {
-    localStorage.setItem(ULTRAWIDE_STORAGE_KEY, enabled ? "1" : "0");
-  } catch (error) {
-    console.warn("Unable to persist ultrawide preference.", error);
-  }
-}
-
-function initUltrawideMode() {
-  if (!ultrawideToggle) {
-    return;
-  }
-
-  try {
-    const savedValue = localStorage.getItem(ULTRAWIDE_STORAGE_KEY) === "1";
-    applyUltrawideMode(savedValue);
-  } catch (error) {
-    applyUltrawideMode(false);
-  }
-
-  ultrawideToggle.addEventListener("change", (event) => {
-    applyUltrawideMode(event.target.checked);
-    setMessage(event.target.checked ? "Ultrawide layout enabled." : "Ultrawide layout disabled.");
   });
 }
 
@@ -284,10 +241,6 @@ function setSummary(name, count, source) {
     loadClaims();
   }
   updateClaimSummary();
-}
-
-function statusClass(color) {
-  return STATUS_CLASS_MAP[color] || "status-default";
 }
 
 function escapeHtml(value) {
@@ -329,10 +282,6 @@ function getSortValue(member, key) {
   switch (key) {
     case "name":
       return String(member?.name ?? "").toLowerCase();
-    case "level":
-      return Number(member?.level ?? 0);
-    case "status":
-      return String(member?.status?.description ?? "").toLowerCase();
     case "fairFight": {
       const entry = fairFightMap[member?.id];
       return typeof entry?.fairFight === "number" ? entry.fairFight : -1;
@@ -399,14 +348,13 @@ function renderMembers() {
   const members = getVisibleMembers();
 
   if (!members.length) {
-    memberBody.innerHTML = '<tr class="empty-row"><td colspan="6">No targets match this view.</td></tr>';
+    memberBody.innerHTML = '<tr class="empty-row"><td colspan="3">No targets match this view.</td></tr>';
     updateClaimSummary();
     return;
   }
 
   memberBody.innerHTML = members
     .map((member) => {
-      const status = member.status || {};
       const memberKey = getMemberKey(member);
       const claim = claims[memberKey];
       const isMine = claim?.claimedBy === getCallsign();
@@ -416,11 +364,8 @@ function renderMembers() {
 
       return `
         <tr class="${claim ? "is-claimed" : ""}">
-          <td><strong class="target-name">${escapeHtml(member.name ?? "")}</strong><span class="target-position">${escapeHtml(member.position ?? "Unknown position")}</span></td>
-          <td>${escapeHtml(member.level ?? "")}</td>
-          <td><span class="status-badge ${statusClass(status.color)}">${escapeHtml(status.description ?? "")}</span></td>
+          <td><strong class="target-name">${escapeHtml(member.name ?? "")}</strong></td>
           <td>${escapeHtml(formatFairFight(member))}</td>
-          <td>${escapeHtml(member.last_action?.relative ?? "")}</td>
           <td>${claimMarkup}</td>
         </tr>
       `;
@@ -650,8 +595,6 @@ sortButtons.forEach((button) => {
 });
 
 updateSortIndicators();
-initUltrawideMode();
-
 try {
   callsignInput.value = localStorage.getItem(CALLSIGN_STORAGE_KEY) || "";
   roomSlugInput.value = new URLSearchParams(window.location.search).get("room") || "war-01";

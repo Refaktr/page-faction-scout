@@ -57,10 +57,6 @@
           <div class="button-row">
             <button type="submit" class="primary">Enter war room</button>
             <button type="button" id="demo-button" class="secondary">Preview demo</button>
-            <label class="toggle-row" for="ultrawide-toggle">
-              <input id="ultrawide-toggle" type="checkbox">
-              <span>Ultrawide layout</span>
-            </label>
           </div>
         </form>
 
@@ -90,7 +86,7 @@
         <div class="queue-tools">
           <label class="search-field">
             <span class="sr-only">Search targets</span>
-            <input id="target-search" type="search" placeholder="Search target or position">
+            <input id="target-search" type="search" placeholder="Search target">
           </label>
           <div class="filter-group" role="group" aria-label="Target filter">
             <button type="button" class="filter-button active" data-filter="all">All</button>
@@ -103,17 +99,14 @@
           <table>
             <thead>
               <tr>
-                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="name">Target</button></th>
-                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="level">Lvl</button></th>
-                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="status">Status</button></th>
-                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="fairFight">Fair Fight</button></th>
-                <th scope="col">Last seen</th>
-                <th scope="col">Claim</th>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="name">Name</button></th>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="fairFight">FF</button></th>
+                <th scope="col">Dibbs</th>
               </tr>
             </thead>
             <tbody id="member-body">
               <tr class="empty-row">
-                <td colspan="6">No targets loaded yet.</td>
+                <td colspan="3">No targets loaded yet.</td>
               </tr>
             </tbody>
           </table>
