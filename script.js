@@ -65,6 +65,8 @@ let activeFilter = "all";
 let claims = {};
 let remoteMode = false;
 let claimPollTimerId = null;
+let claimEventSource = null;
+let claimEventTokenRefreshTimerId = null;
 let sortState = {
   key: null,
   direction: "asc"
@@ -79,7 +81,7 @@ const CALLSIGN_STORAGE_KEY = "dibbs-callsign";
 const CLAIMS_STORAGE_PREFIX = "dibbs-claims-";
 const ROOM_PASSWORD_STORAGE_PREFIX = "dibbs-room-password-";
 const ROOM_CONTEXT_STORAGE_PREFIX = "dibbs-room-context-";
-const CLAIM_POLL_INTERVAL_MS = 10000;
+const CLAIM_POLL_INTERVAL_MS = 60000;
 
 function setMessage(text) {
   message.textContent = text;
@@ -195,6 +197,17 @@ function stopClaimPolling() {
   }
 }
 
+function stopClaimEvents() {
+  if (claimEventSource) {
+    claimEventSource.close();
+    claimEventSource = null;
+  }
+  if (claimEventTokenRefreshTimerId !== null) {
+    window.clearTimeout(claimEventTokenRefreshTimerId);
+    claimEventTokenRefreshTimerId = null;
+  }
+}
+
 function startClaimPolling() {
   stopClaimPolling();
   claimPollTimerId = window.setInterval(async () => {
@@ -213,6 +226,33 @@ function startClaimPolling() {
       }
     }
   }, CLAIM_POLL_INTERVAL_MS);
+}
+
+async function startClaimEvents() {
+  stopClaimEvents();
+  const tokenData = await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/event-token`, {
+    method: "POST",
+    body: "{}"
+  });
+  const eventUrl = new URL(`/api/rooms/${encodeURIComponent(getRoomSlug())}/events`, DIBBS_API_BASE_URL);
+  eventUrl.searchParams.set("token", tokenData.token);
+  claimEventSource = new EventSource(eventUrl);
+  claimEventSource.addEventListener("claims-changed", async () => {
+    try {
+      await loadRemoteClaims();
+      renderMembers();
+    } catch (error) {
+      console.warn("Unable to refresh shared dibs after an event.", error);
+    }
+  });
+  claimEventSource.onerror = () => {
+    console.warn("Shared dibs live connection interrupted; fallback refresh remains active.");
+  };
+  claimEventTokenRefreshTimerId = window.setTimeout(() => {
+    if (remoteMode) {
+      startClaimEvents().catch((error) => console.warn("Unable to renew shared dibs live connection.", error));
+    }
+  }, 55 * 60 * 1000);
 }
 
 async function loadFactionFromApi(factionName, apiKey) {
@@ -468,6 +508,7 @@ async function loadFairFightForFaction(factionName, members, apiKey) {
 
 function showDemoData(silent = false) {
   stopClaimPolling();
+  stopClaimEvents();
   remoteMode = false;
   if (!silent) {
     setMessage("Rendering demo roster.");
@@ -506,6 +547,7 @@ form.addEventListener("submit", async (event) => {
     saveRoomContext();
     setMessage("Shared war room loaded.");
     startClaimPolling();
+    startClaimEvents().catch((error) => console.warn("Unable to start shared dibs live connection.", error));
     if (ffscouterApiKey) {
       loadFairFightForFaction(factionName, members, ffscouterApiKey);
     }
@@ -627,7 +669,7 @@ try {
   restoreRoomContext();
 } catch (error) {
   callsignInput.value = "";
-  roomSlugInput.value = "war-01";
+  roomSlugInput.value = "";
   roomPasswordInput.value = "";
   factionNameInput.value = "";
   apiKeyInput.value = "";
