@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Faction roster dashboard inspired by the Torn faction scout script.">
-  <title>Faction Scout</title>
+  <meta name="description" content="A war target dibs board for Torn faction operations.">
+  <title>Dibbs | War Target Board</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,22 +13,20 @@
 
     <header class="hero">
       <div>
-        <p class="eyebrow">Torn Faction Scout</p>
-        <h1>Faction member roster with live status color-coding.</h1>
+        <p class="eyebrow">Torn war operations / target control</p>
+        <h1>Call your target. Keep the hit clean.</h1>
         <p class="lede">
-          Search a faction, load member details, and inspect position, status, revive eligibility,
-          and last action in a clean dashboard built for GitHub Pages.
+          A shared dibs board for scouting the opposing faction, assigning targets to hitters,
+          and keeping the next chain organized.
         </p>
       </div>
       <div class="hero-card">
-        <div class="hero-card-label">Columns from the script</div>
+        <div class="hero-card-label">War board protocol</div>
         <ul>
-          <li>Name</li>
-          <li>Level</li>
-          <li>Position</li>
-          <li>Status</li>
-          <li>Revive</li>
-          <li>Last Action</li>
+          <li><strong>1</strong><span>Scout</span></li>
+          <li><strong>2</strong><span>Call dibs</span></li>
+          <li><strong>3</strong><span>Hit</span></li>
+          <li><strong>4</strong><span>Release</span></li>
         </ul>
       </div>
     </header>
@@ -37,8 +35,13 @@
       <section class="panel controls">
         <form id="faction-form" class="form-grid">
           <label>
-            <span>Faction name</span>
-            <input id="faction-name" name="factionName" type="text" placeholder="Enter a faction name">
+            <span>Enemy faction</span>
+            <input id="faction-name" name="factionName" type="text" placeholder="Faction to scout">
+          </label>
+
+          <label>
+            <span>Your callsign</span>
+            <input id="callsign" name="callsign" type="text" placeholder="Who is taking the hit?" maxlength="24">
           </label>
 
           <label>
@@ -52,8 +55,8 @@
           </label>
 
           <div class="button-row">
-            <button type="submit" class="primary">Load faction</button>
-            <button type="button" id="demo-button" class="secondary">Load demo data</button>
+            <button type="submit" class="primary">Load targets</button>
+            <button type="button" id="demo-button" class="secondary">Open war room</button>
             <label class="toggle-row" for="auto-refresh-toggle">
               <input id="auto-refresh-toggle" type="checkbox">
               <span>Auto-refresh every 5s</span>
@@ -66,39 +69,55 @@
         </form>
 
         <p class="note">
-          Static GitHub Pages cannot safely hide secrets, so the API key is entered in the page at runtime.
-          The demo view works without any API access.
+          Dibs are saved in this browser. For a genuinely shared board, host this page behind a small
+          database or realtime service; API keys remain runtime-only on static GitHub Pages.
         </p>
       </section>
 
       <section class="panel status-strip">
-        <div><span class="label">Faction</span><strong id="faction-title">Demo Faction Name</strong></div>
-        <div><span class="label">Members</span><strong id="member-count">0</strong></div>
-        <div><span class="label">Source</span><strong id="data-source">Demo data</strong></div>
+        <div><span class="label">Enemy faction</span><strong id="faction-title">Warband of the Fallen</strong></div>
+        <div><span class="label">Targets</span><strong id="member-count">0</strong></div>
+        <div><span class="label">Open</span><strong id="open-count">0</strong></div>
+        <div><span class="label">Called</span><strong id="claimed-count">0</strong></div>
+        <div><span class="label">Feed</span><strong id="data-source">Demo war room</strong></div>
       </section>
 
       <section class="panel table-panel">
         <div class="table-toolbar">
-          <h2>Roster</h2>
-          <span id="message" class="message">Load a faction to begin.</span>
+          <div>
+            <p class="section-kicker">Live target queue</p>
+            <h2>Who’s yours?</h2>
+          </div>
+          <span id="message" class="message">Pick a target and claim it for your chain.</span>
+        </div>
+
+        <div class="queue-tools">
+          <label class="search-field">
+            <span class="sr-only">Search targets</span>
+            <input id="target-search" type="search" placeholder="Search target or position">
+          </label>
+          <div class="filter-group" role="group" aria-label="Target filter">
+            <button type="button" class="filter-button active" data-filter="all">All</button>
+            <button type="button" class="filter-button" data-filter="open">Open</button>
+            <button type="button" class="filter-button" data-filter="mine">Mine</button>
+          </div>
         </div>
 
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="name">Name</button></th>
+                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="name">Target</button></th>
                 <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="level">Lvl</button></th>
-                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="position">Position</button></th>
                 <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="status">Status</button></th>
-                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="revive">Revive</button></th>
-                <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="lastAction">Last Action</button></th>
                 <th scope="col" aria-sort="none"><button type="button" class="sort-button" data-sort-key="fairFight">Fair Fight</button></th>
+                <th scope="col">Last seen</th>
+                <th scope="col">Claim</th>
               </tr>
             </thead>
             <tbody id="member-body">
               <tr class="empty-row">
-                <td colspan="7">No roster loaded yet.</td>
+                <td colspan="6">No targets loaded yet.</td>
               </tr>
             </tbody>
           </table>

@@ -49,15 +49,20 @@ const factionNameInput = document.getElementById("faction-name");
 const apiKeyInput = document.getElementById("api-key");
 const ffscouterApiKeyInput = document.getElementById("ffscouter-api-key");
 const demoButton = document.getElementById("demo-button");
+const callsignInput = document.getElementById("callsign");
 const autoRefreshToggle = document.getElementById("auto-refresh-toggle");
 const ultrawideToggle = document.getElementById("ultrawide-toggle");
 const memberBody = document.getElementById("member-body");
 const factionTitle = document.getElementById("faction-title");
 const memberCount = document.getElementById("member-count");
 const dataSource = document.getElementById("data-source");
+const openCount = document.getElementById("open-count");
+const claimedCount = document.getElementById("claimed-count");
 const message = document.getElementById("message");
 const notificationStack = document.getElementById("notification-stack");
 const sortButtons = Array.from(document.querySelectorAll(".sort-button"));
+const filterButtons = Array.from(document.querySelectorAll(".filter-button"));
+const targetSearch = document.getElementById("target-search");
 
 let currentMembers = [];
 let currentLiveRequest = null;
@@ -66,6 +71,8 @@ let isRefreshing = false;
 let lastRosterSnapshot = [];
 let fairFightMap = {};
 let fairFightLoadedForFaction = null;
+let activeFilter = "all";
+let claims = {};
 let sortState = {
   key: null,
   direction: "asc"
@@ -74,17 +81,63 @@ let sortState = {
 const SORT_LABELS = {
   name: "Name",
   level: "Lvl",
-  position: "Position",
   status: "Status",
-  revive: "Revive",
-  lastAction: "Last Action",
   fairFight: "Fair Fight"
 };
 
 const ULTRAWIDE_STORAGE_KEY = "faction-scout-ultrawide";
+const CALLSIGN_STORAGE_KEY = "dibbs-callsign";
+const CLAIMS_STORAGE_PREFIX = "dibbs-claims-";
 
 function setMessage(text) {
   message.textContent = text;
+}
+
+function getMemberKey(member) {
+  return String(member?.id ?? member?.name ?? "");
+}
+
+function getDibsKey() {
+  return `${CLAIMS_STORAGE_PREFIX}${(factionTitle.textContent || "unknown").trim().toLowerCase()}`;
+}
+
+function loadClaims() {
+  try {
+    claims = JSON.parse(localStorage.getItem(getDibsKey()) || "{}");
+  } catch (error) {
+    claims = {};
+  }
+}
+
+function saveClaims() {
+  try {
+    localStorage.setItem(getDibsKey(), JSON.stringify(claims));
+  } catch (error) {
+    console.warn("Unable to persist dibs claims.", error);
+  }
+}
+
+function getCallsign() {
+  return callsignInput.value.trim() || "Unknown hitter";
+}
+
+function updateClaimSummary() {
+  const claimed = currentMembers.filter((member) => claims[getMemberKey(member)]).length;
+  claimedCount.textContent = String(claimed);
+  openCount.textContent = String(Math.max(currentMembers.length - claimed, 0));
+}
+
+function getVisibleMembers() {
+  const query = targetSearch.value.trim().toLowerCase();
+
+  return getSortedMembers().filter((member) => {
+    const claim = claims[getMemberKey(member)];
+    const matchesFilter = activeFilter === "all"
+      || (activeFilter === "open" && !claim)
+      || (activeFilter === "mine" && claim?.claimedBy === getCallsign());
+    const searchText = `${member.name ?? ""} ${member.position ?? ""} ${member.status?.description ?? ""}`.toLowerCase();
+    return matchesFilter && (!query || searchText.includes(query));
+  });
 }
 
 function formatAircraftType(value) {
@@ -239,6 +292,8 @@ function setSummary(name, count, source) {
   factionTitle.textContent = name || "Unknown faction";
   memberCount.textContent = String(count);
   dataSource.textContent = source;
+  loadClaims();
+  updateClaimSummary();
 }
 
 function stopAutoRefresh() {
@@ -317,17 +372,8 @@ function getSortValue(member, key) {
       return String(member?.name ?? "").toLowerCase();
     case "level":
       return Number(member?.level ?? 0);
-    case "position":
-      return String(member?.position ?? "").toLowerCase();
     case "status":
       return String(member?.status?.description ?? "").toLowerCase();
-    case "revive":
-      return member?.is_revivable ? 1 : 0;
-    case "lastAction": {
-      const relative = String(member?.last_action?.relative ?? "");
-      const minutes = parseRelativeTimeToMinutes(relative);
-      return Number.isNaN(minutes) ? relative.toLowerCase() : minutes;
-    }
     case "fairFight": {
       const entry = fairFightMap[member?.id];
       return typeof entry?.fairFight === "number" ? entry.fairFight : -1;
@@ -391,35 +437,42 @@ function formatFairFight(member) {
 }
 
 function renderMembers() {
-  const members = getSortedMembers();
+  const members = getVisibleMembers();
 
   if (!members.length) {
-    memberBody.innerHTML = '<tr class="empty-row"><td colspan="7">No members found.</td></tr>';
+    memberBody.innerHTML = '<tr class="empty-row"><td colspan="6">No targets match this view.</td></tr>';
+    updateClaimSummary();
     return;
   }
 
   memberBody.innerHTML = members
     .map((member) => {
       const status = member.status || {};
-      const revive = member.is_revivable ? '<span class="revive-badge revive-yes">Yes</span>' : "";
+      const memberKey = getMemberKey(member);
+      const claim = claims[memberKey];
+      const isMine = claim?.claimedBy === getCallsign();
+      const claimMarkup = claim
+        ? `<div class="claim-state ${isMine ? "claim-mine" : ""}"><strong>${escapeHtml(claim.claimedBy)}</strong><small>${escapeHtml(claim.claimedAt)}</small>${isMine ? `<button type="button" class="release-button" data-member-key="${escapeHtml(memberKey)}">Release</button>` : "<small>Held by another hitter</small>"}</div>`
+        : `<button type="button" class="dibs-button" data-member-key="${escapeHtml(memberKey)}">Dibs</button>`;
 
       return `
-        <tr>
-          <td>${escapeHtml(member.name ?? "")}</td>
+        <tr class="${claim ? "is-claimed" : ""}">
+          <td><strong class="target-name">${escapeHtml(member.name ?? "")}</strong><span class="target-position">${escapeHtml(member.position ?? "Unknown position")}</span></td>
           <td>${escapeHtml(member.level ?? "")}</td>
-          <td>${escapeHtml(member.position ?? "")}</td>
           <td><span class="status-badge ${statusClass(status.color)}">${escapeHtml(status.description ?? "")}</span></td>
-          <td>${revive}</td>
-          <td>${escapeHtml(member.last_action?.relative ?? "")}</td>
           <td>${escapeHtml(formatFairFight(member))}</td>
+          <td>${escapeHtml(member.last_action?.relative ?? "")}</td>
+          <td>${claimMarkup}</td>
         </tr>
       `;
     })
     .join("");
+  updateClaimSummary();
 }
 
 function setMembers(members) {
   currentMembers = Array.isArray(members) ? [...members] : [];
+  updateClaimSummary();
   renderMembers();
 }
 
@@ -629,6 +682,57 @@ demoButton.addEventListener("click", () => {
   showDemoData(false);
 });
 
+memberBody.addEventListener("click", (event) => {
+  const actionButton = event.target.closest("[data-member-key]");
+  if (!actionButton) {
+    return;
+  }
+
+  const memberKey = actionButton.dataset.memberKey;
+  const member = currentMembers.find((entry) => getMemberKey(entry) === memberKey);
+  if (!member) {
+    return;
+  }
+
+  if (actionButton.classList.contains("release-button")) {
+    delete claims[memberKey];
+    saveClaims();
+    setMessage(`${member.name} is back in the open queue.`);
+  } else {
+    const callsign = getCallsign();
+    claims[memberKey] = {
+      claimedBy: callsign,
+      claimedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    };
+    saveClaims();
+    setMessage(`${member.name} is called by ${callsign}.`);
+  }
+
+  renderMembers();
+});
+
+filterButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    activeFilter = button.dataset.filter || "all";
+    filterButtons.forEach((filterButton) => filterButton.classList.toggle("active", filterButton === button));
+    renderMembers();
+  });
+});
+
+targetSearch.addEventListener("input", renderMembers);
+
+callsignInput.addEventListener("input", () => {
+  try {
+    localStorage.setItem(CALLSIGN_STORAGE_KEY, callsignInput.value.trim());
+  } catch (error) {
+    console.warn("Unable to persist callsign.", error);
+  }
+
+  if (activeFilter === "mine") {
+    renderMembers();
+  }
+});
+
 autoRefreshToggle.addEventListener("change", () => {
   if (!autoRefreshToggle.checked) {
     stopAutoRefresh();
@@ -675,6 +779,12 @@ sortButtons.forEach((button) => {
 
 updateSortIndicators();
 initUltrawideMode();
+
+try {
+  callsignInput.value = localStorage.getItem(CALLSIGN_STORAGE_KEY) || "";
+} catch (error) {
+  callsignInput.value = "";
+}
 
 syncAutoRefreshState();
 
