@@ -46,7 +46,7 @@ const roomSlugInput = document.getElementById("room-slug");
 const roomPasswordInput = document.getElementById("room-password");
 const factionNameInput = document.getElementById("faction-name");
 const apiKeyInput = document.getElementById("api-key");
-const autoRefreshToggle = document.getElementById("auto-refresh-toggle");
+const ffscouterApiKeyInput = document.getElementById("ffscouter-api-key");
 const memberBody = document.getElementById("member-body");
 const factionTitle = document.getElementById("faction-title");
 const memberCount = document.getElementById("member-count");
@@ -78,6 +78,7 @@ const SORT_LABELS = {
 const CALLSIGN_STORAGE_KEY = "dibbs-callsign";
 const CLAIMS_STORAGE_PREFIX = "dibbs-claims-";
 const ROOM_PASSWORD_STORAGE_PREFIX = "dibbs-room-password-";
+const ROOM_CONTEXT_STORAGE_PREFIX = "dibbs-room-context-";
 const CLAIM_POLL_INTERVAL_MS = 10000;
 
 function setMessage(text) {
@@ -126,6 +127,25 @@ function getRoomPassword() {
 
 function getRoomSlug() {
   return roomSlugInput.value.trim().toLowerCase();
+}
+
+function saveRoomContext() {
+  const roomSlug = getRoomSlug();
+  sessionStorage.setItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${roomSlug}`, getRoomPassword());
+  sessionStorage.setItem(`${ROOM_CONTEXT_STORAGE_PREFIX}${roomSlug}`, JSON.stringify({
+    factionName: factionNameInput.value.trim(),
+    tornApiKey: apiKeyInput.value.trim(),
+    ffscouterApiKey: ffscouterApiKeyInput.value.trim()
+  }));
+}
+
+function restoreRoomContext() {
+  const roomSlug = getRoomSlug();
+  roomPasswordInput.value = sessionStorage.getItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${roomSlug}`) || "";
+  const savedContext = JSON.parse(sessionStorage.getItem(`${ROOM_CONTEXT_STORAGE_PREFIX}${roomSlug}`) || "{}");
+  factionNameInput.value = savedContext.factionName || "";
+  apiKeyInput.value = savedContext.tornApiKey || "";
+  ffscouterApiKeyInput.value = savedContext.ffscouterApiKey || "";
 }
 
 async function dibbsApiRequest(path, options = {}) {
@@ -467,6 +487,7 @@ form.addEventListener("submit", async (event) => {
 
   const factionName = factionNameInput.value.trim();
   const apiKey = apiKeyInput.value.trim();
+  const ffscouterApiKey = ffscouterApiKeyInput.value.trim();
   if (!getRoomSlug() || !getRoomPassword() || !factionName || !apiKey) {
     setMessage("Enter a room, room password, faction name, and Torn API key.");
     return;
@@ -480,9 +501,14 @@ form.addEventListener("submit", async (event) => {
     ]);
     setMembers(members);
     setSummary(factionName, members.length, "Torn + shared dibs");
-    sessionStorage.setItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${getRoomSlug()}`, getRoomPassword());
+    fairFightMap = {};
+    fairFightLoadedForFaction = null;
+    saveRoomContext();
     setMessage("Shared war room loaded.");
     startClaimPolling();
+    if (ffscouterApiKey) {
+      loadFairFightForFaction(factionName, members, ffscouterApiKey);
+    }
   } catch (error) {
     remoteMode = false;
     setMessage(error instanceof Error ? error.message : "Unable to load the war room.");
@@ -598,11 +624,14 @@ updateSortIndicators();
 try {
   callsignInput.value = localStorage.getItem(CALLSIGN_STORAGE_KEY) || "";
   roomSlugInput.value = new URLSearchParams(window.location.search).get("room") || "war-01";
-  roomPasswordInput.value = sessionStorage.getItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${getRoomSlug()}`) || "";
+  restoreRoomContext();
 } catch (error) {
   callsignInput.value = "";
   roomSlugInput.value = "war-01";
   roomPasswordInput.value = "";
+  factionNameInput.value = "";
+  apiKeyInput.value = "";
+  ffscouterApiKeyInput.value = "";
 }
 
 showDemoData(true);

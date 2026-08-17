@@ -53,6 +53,10 @@
             <span>Your Torn API key</span>
             <input id="api-key" name="apiKey" type="password" placeholder="Used only in your browser" autocomplete="off" required>
           </label>
+          <label>
+            <span>FFScouter API key</span>
+            <input id="ffscouter-api-key" name="ffscouterApiKey" type="password" placeholder="Optional: enables FF values" autocomplete="off">
+          </label>
 
           <div class="button-row">
             <button type="submit" class="primary">Enter war room</button>
@@ -61,8 +65,8 @@
         </form>
 
         <p class="note">
-          Your browser uses your Torn key to fetch the roster. The shared board stores only who has
-          called dibs on each Torn player ID; it never receives or saves your Torn key.
+          Your browser uses your Torn and optional FFScouter keys to fetch data. The shared board stores
+          only who has called dibs on each Torn player ID; API keys stay in this browser session.
         </p>
       </section>
 
