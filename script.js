@@ -6,6 +6,10 @@ const STATUS_CLASS_MAP = {
   yellow: "status-yellow"
 };
 
+const DIBBS_API_BASE_URL = "https://REPLACE_WITH_YOUR_RENDER_SERVICE.onrender.com";
+const DIBBS_ROOM_SLUG = "war-01";
+const remoteApiConfigured = !DIBBS_API_BASE_URL.includes("REPLACE_WITH_YOUR_RENDER_SERVICE");
+
 const DEMO_DATA = {
   factionName: "Warband of the Fallen",
   members: [
@@ -45,11 +49,9 @@ const DEMO_DATA = {
 };
 
 const form = document.getElementById("faction-form");
-const factionNameInput = document.getElementById("faction-name");
-const apiKeyInput = document.getElementById("api-key");
-const ffscouterApiKeyInput = document.getElementById("ffscouter-api-key");
 const demoButton = document.getElementById("demo-button");
 const callsignInput = document.getElementById("callsign");
+const roomPasswordInput = document.getElementById("room-password");
 const autoRefreshToggle = document.getElementById("auto-refresh-toggle");
 const ultrawideToggle = document.getElementById("ultrawide-toggle");
 const memberBody = document.getElementById("member-body");
@@ -65,14 +67,12 @@ const filterButtons = Array.from(document.querySelectorAll(".filter-button"));
 const targetSearch = document.getElementById("target-search");
 
 let currentMembers = [];
-let currentLiveRequest = null;
-let autoRefreshTimerId = null;
-let isRefreshing = false;
 let lastRosterSnapshot = [];
 let fairFightMap = {};
 let fairFightLoadedForFaction = null;
 let activeFilter = "all";
 let claims = {};
+let remoteMode = false;
 let sortState = {
   key: null,
   direction: "asc"
@@ -88,6 +88,7 @@ const SORT_LABELS = {
 const ULTRAWIDE_STORAGE_KEY = "faction-scout-ultrawide";
 const CALLSIGN_STORAGE_KEY = "dibbs-callsign";
 const CLAIMS_STORAGE_PREFIX = "dibbs-claims-";
+const ROOM_PASSWORD_STORAGE_KEY = "dibbs-room-password";
 
 function setMessage(text) {
   message.textContent = text;
@@ -102,6 +103,10 @@ function getDibsKey() {
 }
 
 function loadClaims() {
+  if (remoteMode) {
+    return;
+  }
+
   try {
     claims = JSON.parse(localStorage.getItem(getDibsKey()) || "{}");
   } catch (error) {
@@ -110,6 +115,10 @@ function loadClaims() {
 }
 
 function saveClaims() {
+  if (remoteMode) {
+    return;
+  }
+
   try {
     localStorage.setItem(getDibsKey(), JSON.stringify(claims));
   } catch (error) {
@@ -119,6 +128,86 @@ function saveClaims() {
 
 function getCallsign() {
   return callsignInput.value.trim() || "Unknown hitter";
+}
+
+function getRoomPassword() {
+  return roomPasswordInput.value.trim();
+}
+
+async function dibbsApiRequest(path, options = {}) {
+  const response = await fetch(`${DIBBS_API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-Room-Password": getRoomPassword(),
+      ...(options.headers || {})
+    }
+  });
+
+  if (!response.ok) {
+    let detail = `Dibbs API request failed (${response.status})`;
+    try {
+      const body = await response.json();
+      detail = body.error || detail;
+    } catch (error) {
+      // Keep the HTTP status when the API does not return JSON.
+    }
+    throw new Error(detail);
+  }
+
+  return response.status === 204 ? null : response.json();
+}
+
+function mapRemoteTarget(target) {
+  return {
+    id: target.torn_id ?? target.id,
+    dibbsTargetId: target.id,
+    name: target.name,
+    level: target.level,
+    position: target.position,
+    status: {
+      description: target.status_description || "Unknown",
+      color: target.status_color || "default"
+    },
+    last_action: { relative: target.last_action || "Unknown" },
+    remoteClaim: target.callsign
+      ? { claimedBy: target.callsign, claimedAt: new Date(target.claimed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }
+      : null
+  };
+}
+
+async function loadRemoteWarRoom() {
+  if (!remoteApiConfigured) {
+    throw new Error("The Render API URL has not been configured.");
+  }
+
+  const targetData = await dibbsApiRequest(`/api/rooms/${DIBBS_ROOM_SLUG}/targets`);
+  const remoteMembers = targetData.targets.map(mapRemoteTarget);
+  claims = {};
+  remoteMembers.forEach((member) => {
+    if (member.remoteClaim) {
+      claims[getMemberKey(member)] = {
+        ...member.remoteClaim,
+        remoteTargetId: member.dibbsTargetId
+      };
+    }
+  });
+  return remoteMembers;
+}
+
+async function loadRemoteClaims() {
+  const targetData = await dibbsApiRequest(`/api/rooms/${DIBBS_ROOM_SLUG}/targets`);
+  claims = {};
+  targetData.targets.forEach((target) => {
+    if (target.callsign) {
+      claims[String(target.torn_id ?? target.id)] = {
+        claimedBy: target.callsign,
+        claimedAt: new Date(target.claimed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        remoteTargetId: target.id
+      };
+    }
+  });
 }
 
 function updateClaimSummary() {
@@ -292,39 +381,10 @@ function setSummary(name, count, source) {
   factionTitle.textContent = name || "Unknown faction";
   memberCount.textContent = String(count);
   dataSource.textContent = source;
-  loadClaims();
+  if (!remoteMode) {
+    loadClaims();
+  }
   updateClaimSummary();
-}
-
-function stopAutoRefresh() {
-  if (autoRefreshTimerId !== null) {
-    window.clearInterval(autoRefreshTimerId);
-    autoRefreshTimerId = null;
-  }
-}
-
-function syncAutoRefreshState() {
-  if (!autoRefreshToggle.checked) {
-    stopAutoRefresh();
-    return;
-  }
-
-  stopAutoRefresh();
-  autoRefreshTimerId = window.setInterval(() => {
-    if (currentLiveRequest) {
-      refreshLiveRoster(true);
-    } else {
-      showDemoData(true);
-    }
-    console.log("Auto-refresh executed at", new Date().toLocaleTimeString());
-  }, 5000);
-}
-
-function setLiveRequestContext(factionName, apiKey) {
-  currentLiveRequest = {
-    factionName,
-    apiKey
-  };
 }
 
 function statusClass(color) {
@@ -480,43 +540,6 @@ function loadDemoData() {
   return DEMO_DATA;
 }
 
-async function loadFactionFromApi(factionName, apiKey) {
-  const searchResponse = await fetch(`https://api.torn.com/v2/faction/search?name=${encodeURIComponent(factionName)}`, {
-    headers: {
-      Accept: "application/json",
-      Authorization: `ApiKey ${apiKey}`
-    }
-  });
-
-  if (!searchResponse.ok) {
-    throw new Error(`Faction search failed (${searchResponse.status})`);
-  }
-
-  const searchData = await searchResponse.json();
-  const factionId = searchData?.search?.[0]?.id;
-
-  if (!factionId) {
-    throw new Error("No faction match found.");
-  }
-
-  const membersResponse = await fetch(`https://api.torn.com/v2/faction/${factionId}/members`, {
-    headers: {
-      Accept: "application/json",
-      Authorization: `ApiKey ${apiKey}`
-    }
-  });
-
-  if (!membersResponse.ok) {
-    throw new Error(`Member lookup failed (${membersResponse.status})`);
-  }
-
-  const membersData = await membersResponse.json();
-  return {
-    factionName,
-    members: Object.values(membersData?.members || {})
-  };
-}
-
 async function getFairFightData(userIdArray, apiKey) {
   if (!Array.isArray(userIdArray) || !userIdArray.length) {
     console.log("getFairFightData: no user IDs supplied, skipping fetch.");
@@ -579,43 +602,8 @@ async function loadFairFightForFaction(factionName, members, apiKey) {
   }
 }
 
-async function refreshLiveRoster(silent = false, clearOnError = false) {
-  if (!currentLiveRequest || isRefreshing) {
-    return false;
-  }
-
-  isRefreshing = true;
-
-  if (!silent) {
-    setMessage("Loading roster from Torn API...");
-  }
-
-  try {
-    const data = await loadFactionFromApi(currentLiveRequest.factionName, currentLiveRequest.apiKey);
-    const previousMembers = [...lastRosterSnapshot];
-    setMembers(data.members);
-    setSummary(data.factionName, data.members.length, "Live API");
-    compareRosterSnapshots(previousMembers, data.members);
-    lastRosterSnapshot = data.members.map((member) => ({ ...member }));
-
-    if (!silent) {
-      setMessage("Roster loaded successfully.");
-    }
-    return true;
-  } catch (error) {
-    console.error(error);
-    setMessage(error instanceof Error ? error.message : "Unable to load faction data.");
-    setSummary(currentLiveRequest.factionName, 0, "Error");
-    if (clearOnError) {
-      setMembers([]);
-    }
-    return false;
-  } finally {
-    isRefreshing = false;
-  }
-}
-
 function showDemoData(silent = false) {
+  remoteMode = false;
   if (!silent) {
     setMessage("Rendering demo roster.");
   }
@@ -627,7 +615,7 @@ function showDemoData(silent = false) {
   compareRosterSnapshots(previousMembers, data.members);
   lastRosterSnapshot = data.members.map((member) => ({ ...member }));
 
-  if (!silent && !currentLiveRequest) {
+  if (!silent) {
     setMessage("Demo roster loaded.");
   }
 }
@@ -635,54 +623,34 @@ function showDemoData(silent = false) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  const factionName = factionNameInput.value.trim();
-  const apiKey = apiKeyInput.value.trim();
-  const ffscouterApiKey = ffscouterApiKeyInput.value.trim();
-
-  if (!factionName) {
-    setMessage("Enter a faction name first.");
+  if (!getRoomPassword()) {
+    setMessage("Enter the war room password first.");
     return;
   }
 
-  if (!apiKey) {
-    setMessage("Add a Torn API key or use the demo view.");
-    return;
-  }
-
-  setLiveRequestContext(factionName, apiKey);
-  setSummary(factionName, "...", "Live API");
-
-  if (fairFightLoadedForFaction !== factionName) {
-    fairFightMap = {};
-  }
-
-  const loaded = await refreshLiveRoster(false, true);
-
-  if (!loaded) {
-    return;
-  }
-
-  if (ffscouterApiKey) {
-    console.log(`Faction "${factionName}" loaded with ${currentMembers.length} member(s), triggering fair fight lookup.`);
-    loadFairFightForFaction(factionName, currentMembers, ffscouterApiKey);
-  } else {
-    console.log("No FFScouter API key provided, skipping fair fight lookup.");
-  }
-
-  syncAutoRefreshState();
-  if (autoRefreshToggle.checked) {
-    setMessage("Auto-refresh enabled. Updating every 5 seconds.");
+  try {
+    remoteMode = true;
+    const members = await loadRemoteWarRoom();
+    const previousMembers = [...lastRosterSnapshot];
+    setMembers(members);
+    setSummary("Faction War", members.length, "Shared war room");
+    compareRosterSnapshots(previousMembers, members);
+    lastRosterSnapshot = members.map((member) => ({ ...member }));
+    sessionStorage.setItem(ROOM_PASSWORD_STORAGE_KEY, getRoomPassword());
+    setMessage("Shared war room loaded.");
+  } catch (error) {
+    remoteMode = false;
+    setMessage(error instanceof Error ? error.message : "Unable to load the war room.");
   }
 });
 
 demoButton.addEventListener("click", () => {
-  currentLiveRequest = null;
   fairFightMap = {};
   fairFightLoadedForFaction = null;
   showDemoData(false);
 });
 
-memberBody.addEventListener("click", (event) => {
+memberBody.addEventListener("click", async (event) => {
   const actionButton = event.target.closest("[data-member-key]");
   if (!actionButton) {
     return;
@@ -694,18 +662,38 @@ memberBody.addEventListener("click", (event) => {
     return;
   }
 
-  if (actionButton.classList.contains("release-button")) {
-    delete claims[memberKey];
-    saveClaims();
-    setMessage(`${member.name} is back in the open queue.`);
-  } else {
-    const callsign = getCallsign();
-    claims[memberKey] = {
-      claimedBy: callsign,
-      claimedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    };
-    saveClaims();
-    setMessage(`${member.name} is called by ${callsign}.`);
+  try {
+    if (remoteMode) {
+      const claim = claims[memberKey];
+      if (actionButton.classList.contains("release-button")) {
+        await dibbsApiRequest(`/api/rooms/${DIBBS_ROOM_SLUG}/targets/${claim.remoteTargetId}/claim`, {
+          method: "DELETE",
+          body: JSON.stringify({ callsign: getCallsign() })
+        });
+        setMessage(`${member.name} is back in the open queue.`);
+      } else {
+        await dibbsApiRequest(`/api/rooms/${DIBBS_ROOM_SLUG}/targets/${member.dibbsTargetId}/claim`, {
+          method: "POST",
+          body: JSON.stringify({ callsign: getCallsign() })
+        });
+        setMessage(`${member.name} is called by ${getCallsign()}.`);
+      }
+      await loadRemoteClaims();
+    } else if (actionButton.classList.contains("release-button")) {
+      delete claims[memberKey];
+      saveClaims();
+      setMessage(`${member.name} is back in the open queue.`);
+    } else {
+      const callsign = getCallsign();
+      claims[memberKey] = {
+        claimedBy: callsign,
+        claimedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      };
+      saveClaims();
+      setMessage(`${member.name} is called by ${callsign}.`);
+    }
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : "Unable to update dibs.");
   }
 
   renderMembers();
@@ -730,29 +718,6 @@ callsignInput.addEventListener("input", () => {
 
   if (activeFilter === "mine") {
     renderMembers();
-  }
-});
-
-autoRefreshToggle.addEventListener("change", () => {
-  if (!autoRefreshToggle.checked) {
-    stopAutoRefresh();
-    setMessage("Auto-refresh disabled.");
-    return;
-  }
-
-  if (!currentLiveRequest && !currentMembers.length) {
-    autoRefreshToggle.checked = false;
-    setMessage("Load a live faction or demo roster first, then enable auto-refresh.");
-    return;
-  }
-
-  syncAutoRefreshState();
-  setMessage("Auto-refresh enabled. Updating every 5 seconds.");
-
-  if (currentLiveRequest) {
-    refreshLiveRoster(true);
-  } else {
-    showDemoData(true);
   }
 });
 
@@ -782,10 +747,10 @@ initUltrawideMode();
 
 try {
   callsignInput.value = localStorage.getItem(CALLSIGN_STORAGE_KEY) || "";
+  roomPasswordInput.value = sessionStorage.getItem(ROOM_PASSWORD_STORAGE_KEY) || "";
 } catch (error) {
   callsignInput.value = "";
+  roomPasswordInput.value = "";
 }
-
-syncAutoRefreshState();
 
 showDemoData(true);

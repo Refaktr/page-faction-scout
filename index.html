@@ -35,32 +35,18 @@
       <section class="panel controls">
         <form id="faction-form" class="form-grid">
           <label>
-            <span>Enemy faction</span>
-            <input id="faction-name" name="factionName" type="text" placeholder="Faction to scout">
-          </label>
-
-          <label>
             <span>Your callsign</span>
             <input id="callsign" name="callsign" type="text" placeholder="Who is taking the hit?" maxlength="24">
           </label>
 
           <label>
-            <span>Torn API key</span>
-            <input id="api-key" name="apiKey" type="password" placeholder="Public Access Key required.">
-          </label>
-
-          <label>
-            <span>FFScouter API key</span>
-            <input id="ffscouter-api-key" name="ffscouterApiKey" type="password" placeholder="Optional, enables Fair Fight data.">
+            <span>War room password</span>
+            <input id="room-password" name="roomPassword" type="password" placeholder="Provided by your war lead" autocomplete="current-password">
           </label>
 
           <div class="button-row">
-            <button type="submit" class="primary">Load targets</button>
-            <button type="button" id="demo-button" class="secondary">Open war room</button>
-            <label class="toggle-row" for="auto-refresh-toggle">
-              <input id="auto-refresh-toggle" type="checkbox">
-              <span>Auto-refresh every 5s</span>
-            </label>
+            <button type="submit" class="primary">Enter war room</button>
+            <button type="button" id="demo-button" class="secondary">Preview demo</button>
             <label class="toggle-row" for="ultrawide-toggle">
               <input id="ultrawide-toggle" type="checkbox">
               <span>Ultrawide layout</span>
@@ -69,8 +55,8 @@
         </form>
 
         <p class="note">
-          Dibs are saved in this browser. For a genuinely shared board, host this page behind a small
-          database or realtime service; API keys remain runtime-only on static GitHub Pages.
+          The war lead sets up and refreshes the target roster separately. Your room password grants
+          access to the live shared board; it is never stored in the page source.
         </p>
       </section>
 
