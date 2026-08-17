@@ -7,7 +7,6 @@ const STATUS_CLASS_MAP = {
 };
 
 const DIBBS_API_BASE_URL = "https://dibbs-api-upc8.onrender.com";
-const DIBBS_ROOM_SLUG = "war-01";
 const remoteApiConfigured = !DIBBS_API_BASE_URL.includes("REPLACE_WITH_YOUR_RENDER_SERVICE");
 
 const DEMO_DATA = {
@@ -51,6 +50,7 @@ const DEMO_DATA = {
 const form = document.getElementById("faction-form");
 const demoButton = document.getElementById("demo-button");
 const callsignInput = document.getElementById("callsign");
+const roomSlugInput = document.getElementById("room-slug");
 const roomPasswordInput = document.getElementById("room-password");
 const autoRefreshToggle = document.getElementById("auto-refresh-toggle");
 const ultrawideToggle = document.getElementById("ultrawide-toggle");
@@ -88,7 +88,7 @@ const SORT_LABELS = {
 const ULTRAWIDE_STORAGE_KEY = "faction-scout-ultrawide";
 const CALLSIGN_STORAGE_KEY = "dibbs-callsign";
 const CLAIMS_STORAGE_PREFIX = "dibbs-claims-";
-const ROOM_PASSWORD_STORAGE_KEY = "dibbs-room-password";
+const ROOM_PASSWORD_STORAGE_PREFIX = "dibbs-room-password-";
 
 function setMessage(text) {
   message.textContent = text;
@@ -132,6 +132,10 @@ function getCallsign() {
 
 function getRoomPassword() {
   return roomPasswordInput.value.trim();
+}
+
+function getRoomSlug() {
+  return roomSlugInput.value.trim().toLowerCase();
 }
 
 async function dibbsApiRequest(path, options = {}) {
@@ -182,7 +186,7 @@ async function loadRemoteWarRoom() {
     throw new Error("The Render API URL has not been configured.");
   }
 
-  const targetData = await dibbsApiRequest(`/api/rooms/${DIBBS_ROOM_SLUG}/targets`);
+  const targetData = await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/targets`);
   const remoteMembers = targetData.targets.map(mapRemoteTarget);
   claims = {};
   remoteMembers.forEach((member) => {
@@ -197,7 +201,7 @@ async function loadRemoteWarRoom() {
 }
 
 async function loadRemoteClaims() {
-  const targetData = await dibbsApiRequest(`/api/rooms/${DIBBS_ROOM_SLUG}/targets`);
+  const targetData = await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/targets`);
   claims = {};
   targetData.targets.forEach((target) => {
     if (target.callsign) {
@@ -636,7 +640,7 @@ form.addEventListener("submit", async (event) => {
     setSummary("Faction War", members.length, "Shared war room");
     compareRosterSnapshots(previousMembers, members);
     lastRosterSnapshot = members.map((member) => ({ ...member }));
-    sessionStorage.setItem(ROOM_PASSWORD_STORAGE_KEY, getRoomPassword());
+    sessionStorage.setItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${getRoomSlug()}`, getRoomPassword());
     setMessage("Shared war room loaded.");
   } catch (error) {
     remoteMode = false;
@@ -666,13 +670,13 @@ memberBody.addEventListener("click", async (event) => {
     if (remoteMode) {
       const claim = claims[memberKey];
       if (actionButton.classList.contains("release-button")) {
-        await dibbsApiRequest(`/api/rooms/${DIBBS_ROOM_SLUG}/targets/${claim.remoteTargetId}/claim`, {
+        await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/targets/${claim.remoteTargetId}/claim`, {
           method: "DELETE",
           body: JSON.stringify({ callsign: getCallsign() })
         });
         setMessage(`${member.name} is back in the open queue.`);
       } else {
-        await dibbsApiRequest(`/api/rooms/${DIBBS_ROOM_SLUG}/targets/${member.dibbsTargetId}/claim`, {
+        await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/targets/${member.dibbsTargetId}/claim`, {
           method: "POST",
           body: JSON.stringify({ callsign: getCallsign() })
         });
@@ -747,9 +751,11 @@ initUltrawideMode();
 
 try {
   callsignInput.value = localStorage.getItem(CALLSIGN_STORAGE_KEY) || "";
-  roomPasswordInput.value = sessionStorage.getItem(ROOM_PASSWORD_STORAGE_KEY) || "";
+  roomSlugInput.value = new URLSearchParams(window.location.search).get("room") || "war-01";
+  roomPasswordInput.value = sessionStorage.getItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${getRoomSlug()}`) || "";
 } catch (error) {
   callsignInput.value = "";
+  roomSlugInput.value = "war-01";
   roomPasswordInput.value = "";
 }
 
