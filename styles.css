@@ -152,6 +152,11 @@ table td,
 main {
   display: grid;
   gap: 16px;
+  min-width: 0;
+}
+
+main > * {
+  min-width: 0;
 }
 
 .controls,
@@ -610,6 +615,15 @@ tbody td {
   .form-grid,
   .status-strip {
     grid-template-columns: 1fr;
+  }
+
+  body.ultrawide main,
+  body.ultrawide .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.ultrawide .shell {
+    width: min(100% - 20px, 1180px);
   }
 
   h1 {
