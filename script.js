@@ -6,7 +6,7 @@ const STATUS_CLASS_MAP = {
   yellow: "status-yellow"
 };
 
-const DIBBS_API_BASE_URL = "https://REPLACE_WITH_YOUR_RENDER_SERVICE.onrender.com";
+const DIBBS_API_BASE_URL = "https://dibbs-api-upc8.onrender.com";
 const DIBBS_ROOM_SLUG = "war-01";
 const remoteApiConfigured = !DIBBS_API_BASE_URL.includes("REPLACE_WITH_YOUR_RENDER_SERVICE");
 
