@@ -603,9 +603,26 @@ memberBody.addEventListener("click", async (event) => {
         });
         setMessage(`${member.name} is back in the open queue.`);
       } else {
-        await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/claims/${encodeURIComponent(member.id)}`, {
-          method: "POST"
-        });
+        const currentClaim = Object.entries(claims).find(([, entry]) => entry?.claimedBy === getCallsign());
+        const currentMember = currentClaim
+          ? currentMembers.find((entry) => getMemberKey(entry) === currentClaim[0])
+          : null;
+        const claimsPath = `/api/rooms/${encodeURIComponent(getRoomSlug())}/claims`;
+
+        if (currentMember && currentMember.id !== member.id) {
+          await dibbsApiRequest(`${claimsPath}/${encodeURIComponent(currentMember.id)}`, { method: "DELETE" });
+        }
+
+        try {
+          await dibbsApiRequest(`${claimsPath}/${encodeURIComponent(member.id)}`, { method: "POST" });
+        } catch (error) {
+          if (currentMember && currentMember.id !== member.id) {
+            await dibbsApiRequest(`${claimsPath}/${encodeURIComponent(currentMember.id)}`, { method: "POST" }).catch((restoreError) => {
+              console.warn("Unable to restore the previous Dibs claim.", restoreError);
+            });
+          }
+          throw error;
+        }
         setMessage(`${member.name} is called by ${getCallsign()}.`);
       }
       await loadRemoteClaims();
