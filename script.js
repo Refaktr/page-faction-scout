@@ -122,11 +122,11 @@ function getCallsign() {
 }
 
 function getRoomPassword() {
-  return roomPasswordInput.value.trim();
+  return roomPasswordInput?.value.trim() || "";
 }
 
 function getRoomSlug() {
-  return roomSlugInput.value.trim().toLowerCase();
+  return roomSlugInput?.value.trim().toLowerCase() || "";
 }
 
 function saveRoomContext() {
@@ -542,8 +542,8 @@ function showDemoData(silent = false) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  const apiKey = apiKeyInput.value.trim();
-  const ffscouterApiKey = ffscouterApiKeyInput.value.trim();
+  const apiKey = apiKeyInput?.value.trim() || "";
+  const ffscouterApiKey = ffscouterApiKeyInput?.value.trim() || "";
   if (!getRoomSlug() || !getRoomPassword() || !apiKey) {
     setMessage("Enter a room, room password, and Torn API key.");
     return;
@@ -646,7 +646,7 @@ filterButtons.forEach((button) => {
   });
 });
 
-targetSearch.addEventListener("input", renderMembers);
+targetSearch?.addEventListener("input", renderMembers);
 
 sortButtons.forEach((button) => {
   button.addEventListener("click", () => {
