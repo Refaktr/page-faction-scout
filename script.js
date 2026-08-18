@@ -41,7 +41,6 @@ const DEMO_DATA = {
 
 const form = document.getElementById("faction-form");
 const demoButton = document.getElementById("demo-button");
-const roomSlugInput = document.getElementById("room-slug");
 const apiKeyInput = document.getElementById("api-key");
 const ffscouterApiKeyInput = document.getElementById("ffscouter-api-key");
 const memberBody = document.getElementById("member-body");
@@ -61,6 +60,7 @@ let fairFightLoadedForFaction = null;
 let activeFilter = "all";
 let claims = {};
 let currentCallsign = "";
+let currentRoomSlug = "";
 let roomAccessToken = "";
 let remoteMode = false;
 let claimPollTimerId = null;
@@ -121,20 +121,20 @@ function getCallsign() {
 }
 
 function getRoomSlug() {
-  return roomSlugInput?.value.trim().toLowerCase() || "";
+  return currentRoomSlug;
 }
 
 function saveRoomContext() {
-  const roomSlug = getRoomSlug();
-  sessionStorage.setItem(`${ROOM_CONTEXT_STORAGE_PREFIX}${roomSlug}`, JSON.stringify({
+  localStorage.setItem(ROOM_CONTEXT_STORAGE_PREFIX, JSON.stringify({
+    roomSlug: getRoomSlug(),
     tornApiKey: apiKeyInput.value.trim(),
     ffscouterApiKey: ffscouterApiKeyInput.value.trim()
   }));
 }
 
 function restoreRoomContext() {
-  const roomSlug = getRoomSlug();
-  const savedContext = JSON.parse(sessionStorage.getItem(`${ROOM_CONTEXT_STORAGE_PREFIX}${roomSlug}`) || "{}");
+  const savedContext = JSON.parse(localStorage.getItem(ROOM_CONTEXT_STORAGE_PREFIX) || "{}");
+  currentRoomSlug = savedContext.roomSlug || "";
   apiKeyInput.value = savedContext.tornApiKey || "";
   ffscouterApiKeyInput.value = savedContext.ffscouterApiKey || "";
 }
@@ -165,19 +165,15 @@ async function dibbsApiRequest(path, options = {}) {
 }
 
 async function joinRoom(apiKey) {
-  const roomSlug = getRoomSlug();
-  const endpoint = roomSlug
-    ? `/api/rooms/${encodeURIComponent(roomSlug)}/join`
-    : "/api/rooms/discover";
-  const response = await fetch(`${DIBBS_API_BASE_URL}${endpoint}`, {
+  const response = await fetch(`${DIBBS_API_BASE_URL}/api/rooms/discover`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ tornApiKey: apiKey })
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    if (response.status === 404 && !roomSlug) {
-      throw new Error("Faction room discovery is unavailable on the deployed API. Redeploy the updated DATABASE server, or enter a room slug.");
+    if (response.status === 404) {
+      throw new Error("Faction room discovery is unavailable on the deployed API. Redeploy the updated DATABASE server.");
     }
     throw new Error(body.error || `War room join failed (${response.status}).`);
   }
@@ -555,11 +551,13 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
+  saveRoomContext();
+
   try {
     remoteMode = true;
     currentCallsign = "";
     const joinData = await joinRoom(apiKey);
-    roomSlugInput.value = joinData.room.slug;
+    currentRoomSlug = joinData.room.slug;
     roomAccessToken = joinData.token;
     currentCallsign = joinData.player.name;
     const room = await loadRemoteClaims();
@@ -680,10 +678,9 @@ sortButtons.forEach((button) => {
 
 updateSortIndicators();
 try {
-  roomSlugInput.value = new URLSearchParams(window.location.search).get("room") || "";
   restoreRoomContext();
 } catch (error) {
-  roomSlugInput.value = "";
+  currentRoomSlug = "";
   apiKeyInput.value = "";
   ffscouterApiKeyInput.value = "";
 }
