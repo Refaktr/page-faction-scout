@@ -273,6 +273,9 @@ async function loadFactionFromApi(factionName, apiKey) {
     throw new Error(`Faction search failed (${searchResponse.status}).`);
   }
   const searchData = await searchResponse.json();
+  const factionMatches = Array.isArray(searchData?.search) ? searchData.search : [];
+  console.log("Torn faction search results:", factionMatches);
+  console.table(factionMatches);
   const factionId = searchData?.search?.[0]?.id;
   if (!factionId) {
     throw new Error("No faction match found.");
@@ -282,7 +285,10 @@ async function loadFactionFromApi(factionName, apiKey) {
     throw new Error(`Member lookup failed (${membersResponse.status}).`);
   }
   const membersData = await membersResponse.json();
-  return Object.values(membersData?.members || {});
+  const factionMembers = Object.values(membersData?.members || {});
+  console.log(`Torn faction members for ${factionId}:`, factionMembers);
+  console.table(factionMembers);
+  return factionMembers;
 }
 
 
@@ -430,8 +436,11 @@ function renderMembers() {
       const memberKey = getMemberKey(member);
       const claim = claims[memberKey];
       const isMine = claim?.claimedBy === getCallsign();
+      const attackMarkup = isMine && member.id != null
+        ? `<a class="attack-button" href="https://www.torn.com/page.php?sid=attack&user2ID=${encodeURIComponent(member.id)}" target="_blank" rel="noopener noreferrer">ATTACK</a>`
+        : "";
       const claimMarkup = claim
-        ? `<div class="claim-state ${isMine ? "claim-mine" : ""}"><strong>${escapeHtml(claim.claimedBy)}</strong><small>${escapeHtml(claim.claimedAt)}</small>${isMine ? `<button type="button" class="release-button" data-member-key="${escapeHtml(memberKey)}">Release</button>` : "<small>Held by another hitter</small>"}</div>`
+        ? `<div class="claim-state ${isMine ? "claim-mine" : ""}"><strong>${escapeHtml(claim.claimedBy)}</strong><small>${escapeHtml(claim.claimedAt)}</small>${isMine ? `${attackMarkup}<button type="button" class="release-button" data-member-key="${escapeHtml(memberKey)}">Release</button>` : "<small>Held by another hitter</small>"}</div>`
         : `<button type="button" class="dibs-button" data-member-key="${escapeHtml(memberKey)}">Dibs</button>`;
 
       return `

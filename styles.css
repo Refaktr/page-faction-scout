@@ -449,6 +449,14 @@ tbody tr.is-claimed {
   background: rgba(255, 184, 74, 0.07);
 }
 
+tbody tr:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+tbody tr.is-claimed:hover {
+  background: rgba(255, 184, 74, 0.12);
+}
+
 tbody td {
   padding: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
@@ -456,6 +464,7 @@ tbody td {
 }
 
 .dibs-button,
+.attack-button,
 .release-button {
   padding: 8px 10px;
   border-radius: 10px;
@@ -468,6 +477,20 @@ tbody td {
   background: var(--accent);
 }
 
+.attack-button {
+  display: inline-block;
+  margin-top: 7px;
+  color: #fff;
+  background: linear-gradient(135deg, #e74c3c, #b92f38);
+  box-shadow: 0 5px 14px rgba(231, 76, 60, 0.2);
+  text-decoration: none;
+}
+
+.attack-button:hover {
+  color: #fff;
+  background: linear-gradient(135deg, #f05b4b, #c83a43);
+}
+
 .release-button {
   margin-top: 6px;
   padding: 5px 7px;
@@ -477,6 +500,22 @@ tbody td {
 
 .claim-state {
   min-width: 0;
+}
+
+.claim-state .attack-button,
+.claim-state .release-button {
+  vertical-align: middle;
+}
+
+.claim-state .release-button {
+  margin-left: 4px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(255, 208, 128, 0.75);
+  outline-offset: 3px;
 }
 
 .claim-state strong,
