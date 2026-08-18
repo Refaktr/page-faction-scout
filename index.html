@@ -37,17 +37,8 @@
             <input id="room-slug" name="roomSlug" type="text" placeholder="war-01" required>
           </label>
           <label>
-            <span>Your callsign</span>
-            <input id="callsign" name="callsign" type="text" placeholder="Who is taking the hit?" maxlength="24">
-          </label>
-
-          <label>
             <span>War room password</span>
             <input id="room-password" name="roomPassword" type="password" placeholder="Provided by your war lead" autocomplete="current-password">
-          </label>
-          <label>
-            <span>Enemy faction</span>
-            <input id="faction-name" name="factionName" type="text" placeholder="Faction to scout" required>
           </label>
           <label>
             <span>Your Torn API key</span>
@@ -65,7 +56,7 @@
         </form>
 
         <p class="note">
-          Your browser uses your Torn and optional FFScouter keys to fetch data. The shared board stores
+          Your browser uses your Torn key to identify you and fetch the roster. The shared board stores
           only who has called dibs on each Torn player ID; API keys stay in this browser session.
         </p>
       </section>

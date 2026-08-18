@@ -41,10 +41,8 @@ const DEMO_DATA = {
 
 const form = document.getElementById("faction-form");
 const demoButton = document.getElementById("demo-button");
-const callsignInput = document.getElementById("callsign");
 const roomSlugInput = document.getElementById("room-slug");
 const roomPasswordInput = document.getElementById("room-password");
-const factionNameInput = document.getElementById("faction-name");
 const apiKeyInput = document.getElementById("api-key");
 const ffscouterApiKeyInput = document.getElementById("ffscouter-api-key");
 const memberBody = document.getElementById("member-body");
@@ -63,6 +61,7 @@ let fairFightMap = {};
 let fairFightLoadedForFaction = null;
 let activeFilter = "all";
 let claims = {};
+let currentCallsign = "";
 let remoteMode = false;
 let claimPollTimerId = null;
 let claimEventSource = null;
@@ -77,7 +76,6 @@ const SORT_LABELS = {
   fairFight: "Fair Fight"
 };
 
-const CALLSIGN_STORAGE_KEY = "dibbs-callsign";
 const CLAIMS_STORAGE_PREFIX = "dibbs-claims-";
 const ROOM_PASSWORD_STORAGE_PREFIX = "dibbs-room-password-";
 const ROOM_CONTEXT_STORAGE_PREFIX = "dibbs-room-context-";
@@ -120,7 +118,7 @@ function saveClaims() {
 }
 
 function getCallsign() {
-  return callsignInput.value.trim() || "Unknown hitter";
+  return currentCallsign || "Demo hitter";
 }
 
 function getRoomPassword() {
@@ -135,7 +133,6 @@ function saveRoomContext() {
   const roomSlug = getRoomSlug();
   sessionStorage.setItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${roomSlug}`, getRoomPassword());
   sessionStorage.setItem(`${ROOM_CONTEXT_STORAGE_PREFIX}${roomSlug}`, JSON.stringify({
-    factionName: factionNameInput.value.trim(),
     tornApiKey: apiKeyInput.value.trim(),
     ffscouterApiKey: ffscouterApiKeyInput.value.trim()
   }));
@@ -145,7 +142,6 @@ function restoreRoomContext() {
   const roomSlug = getRoomSlug();
   roomPasswordInput.value = sessionStorage.getItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${roomSlug}`) || "";
   const savedContext = JSON.parse(sessionStorage.getItem(`${ROOM_CONTEXT_STORAGE_PREFIX}${roomSlug}`) || "{}");
-  factionNameInput.value = savedContext.factionName || "";
   apiKeyInput.value = savedContext.tornApiKey || "";
   ffscouterApiKeyInput.value = savedContext.ffscouterApiKey || "";
 }
@@ -188,6 +184,10 @@ async function loadRemoteClaims() {
       claimedAt: new Date(claim.claimed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     };
   });
+  if (!claimData.room?.enemyFaction) {
+    throw new Error("War room metadata is unavailable. Deploy the latest Render backend, then try again.");
+  }
+  return claimData.room;
 }
 
 function stopClaimPolling() {
@@ -272,6 +272,22 @@ async function loadFactionFromApi(factionName, apiKey) {
   }
   const membersData = await membersResponse.json();
   return Object.values(membersData?.members || {});
+}
+
+async function loadAuthenticatedUser(apiKey) {
+  const response = await fetch("https://api.torn.com/v2/user?selections=profile", {
+    headers: { Accept: "application/json", Authorization: `ApiKey ${apiKey}` }
+  });
+  if (!response.ok) {
+    throw new Error(`Player lookup failed (${response.status}).`);
+  }
+
+  const data = await response.json();
+  const name = String(data?.profile?.name ?? data?.name ?? data?.user?.name ?? "").trim();
+  if (!name) {
+    throw new Error("Your Torn profile name could not be read from this API key.");
+  }
+  return name;
 }
 
 function updateClaimSummary() {
@@ -526,22 +542,24 @@ function showDemoData(silent = false) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  const factionName = factionNameInput.value.trim();
   const apiKey = apiKeyInput.value.trim();
   const ffscouterApiKey = ffscouterApiKeyInput.value.trim();
-  if (!getRoomSlug() || !getRoomPassword() || !factionName || !apiKey) {
-    setMessage("Enter a room, room password, faction name, and Torn API key.");
+  if (!getRoomSlug() || !getRoomPassword() || !apiKey) {
+    setMessage("Enter a room, room password, and Torn API key.");
     return;
   }
 
   try {
     remoteMode = true;
-    const [members] = await Promise.all([
-      loadFactionFromApi(factionName, apiKey),
-      loadRemoteClaims()
+    currentCallsign = "";
+    const [room, playerName] = await Promise.all([
+      loadRemoteClaims(),
+      loadAuthenticatedUser(apiKey)
     ]);
+    currentCallsign = playerName;
+    const members = await loadFactionFromApi(room.enemyFaction, apiKey);
     setMembers(members);
-    setSummary(factionName, members.length, "Torn + shared dibs");
+    setSummary(room.enemyFaction, members.length, "Torn + shared dibs");
     fairFightMap = {};
     fairFightLoadedForFaction = null;
     saveRoomContext();
@@ -549,7 +567,7 @@ form.addEventListener("submit", async (event) => {
     startClaimPolling();
     startClaimEvents().catch((error) => console.warn("Unable to start shared dibs live connection.", error));
     if (ffscouterApiKey) {
-      loadFairFightForFaction(factionName, members, ffscouterApiKey);
+      loadFairFightForFaction(room.enemyFaction, members, ffscouterApiKey);
     }
   } catch (error) {
     remoteMode = false;
@@ -558,6 +576,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 demoButton.addEventListener("click", () => {
+  currentCallsign = "";
   fairFightMap = {};
   fairFightLoadedForFaction = null;
   showDemoData(false);
@@ -629,18 +648,6 @@ filterButtons.forEach((button) => {
 
 targetSearch.addEventListener("input", renderMembers);
 
-callsignInput.addEventListener("input", () => {
-  try {
-    localStorage.setItem(CALLSIGN_STORAGE_KEY, callsignInput.value.trim());
-  } catch (error) {
-    console.warn("Unable to persist callsign.", error);
-  }
-
-  if (activeFilter === "mine") {
-    renderMembers();
-  }
-});
-
 sortButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const key = button.dataset.sortKey;
@@ -664,14 +671,11 @@ sortButtons.forEach((button) => {
 
 updateSortIndicators();
 try {
-  callsignInput.value = localStorage.getItem(CALLSIGN_STORAGE_KEY) || "";
   roomSlugInput.value = new URLSearchParams(window.location.search).get("room") || "war-01";
   restoreRoomContext();
 } catch (error) {
-  callsignInput.value = "";
   roomSlugInput.value = "";
   roomPasswordInput.value = "";
-  factionNameInput.value = "";
   apiKeyInput.value = "";
   ffscouterApiKeyInput.value = "";
 }
