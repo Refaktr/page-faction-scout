@@ -436,6 +436,11 @@ function renderMembers() {
       const memberKey = getMemberKey(member);
       const claim = claims[memberKey];
       const isMine = claim?.claimedBy === getCallsign();
+      const statusDescription = String(member.status?.description || "Status unknown");
+      const statusColor = ["green", "yellow", "blue", "red"].includes(member.status?.color)
+        ? member.status.color
+        : "muted";
+      const lastAction = member.last_action?.relative ? `Last action ${member.last_action.relative}` : "";
       const attackMarkup = isMine && member.id != null
         ? `<a class="attack-button" href="https://www.torn.com/page.php?sid=attack&user2ID=${encodeURIComponent(member.id)}" target="_blank" rel="noopener noreferrer">ATTACK</a>`
         : "";
@@ -445,7 +450,7 @@ function renderMembers() {
 
       return `
         <tr class="${claim ? "is-claimed" : ""}">
-          <td><strong class="target-name">${escapeHtml(member.name ?? "")}</strong></td>
+          <td><strong class="target-name">${escapeHtml(member.name ?? "")}</strong><span class="member-status status-${statusColor}">${escapeHtml(statusDescription)}</span>${lastAction ? `<small class="member-last-action">${escapeHtml(lastAction)}</small>` : ""}</td>
           <td>${escapeHtml(formatFairFight(member))}</td>
           <td>${claimMarkup}</td>
         </tr>

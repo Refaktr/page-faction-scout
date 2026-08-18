@@ -370,7 +370,7 @@ button:hover {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 400px;
+  min-width: 0;
   table-layout: fixed;
 }
 
@@ -500,6 +500,40 @@ tbody td {
 
 .claim-state {
   min-width: 0;
+}
+
+.member-status,
+.member-last-action {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-status {
+  margin-top: 5px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.member-status::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 6px 1px 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-muted {
+  color: var(--muted);
+}
+
+.member-last-action {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .claim-state .attack-button,
@@ -649,5 +683,30 @@ input:focus-visible {
 
   .filter-button {
     flex: 1;
+  }
+
+  thead th,
+  tbody td {
+    padding: 9px 7px;
+  }
+
+  table th:nth-child(1),
+  table td:nth-child(1) {
+    width: 43%;
+  }
+
+  table th:nth-child(2),
+  table td:nth-child(2) {
+    width: 17%;
+  }
+
+  table th:nth-child(3),
+  table td:nth-child(3) {
+    width: 40%;
+  }
+
+  .member-status,
+  .member-last-action {
+    font-size: 0.68rem;
   }
 }
