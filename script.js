@@ -302,6 +302,10 @@ function getVisibleMembers() {
   });
 }
 
+function hasCurrentClaim() {
+  return Object.values(claims).some((claim) => claim?.claimedBy === getCallsign());
+}
+
 function setSummary(name, count, source) {
   factionTitle.textContent = name || "Unknown faction";
   memberCount.textContent = String(count);
@@ -427,9 +431,10 @@ function renderMembers() {
       const memberKey = getMemberKey(member);
       const claim = claims[memberKey];
       const isMine = claim?.claimedBy === getCallsign();
+      const dibsDisabled = !claim && hasCurrentClaim();
       const claimMarkup = claim
         ? `<div class="claim-state ${isMine ? "claim-mine" : ""}"><strong>${escapeHtml(claim.claimedBy)}</strong><small>${escapeHtml(claim.claimedAt)}</small>${isMine ? `<button type="button" class="release-button" data-member-key="${escapeHtml(memberKey)}">Release</button>` : "<small>Held by another hitter</small>"}</div>`
-        : `<button type="button" class="dibs-button" data-member-key="${escapeHtml(memberKey)}">Dibs</button>`;
+        : `<button type="button" class="dibs-button" data-member-key="${escapeHtml(memberKey)}"${dibsDisabled ? " disabled" : ""}>Dibs</button>`;
 
       return `
         <tr class="${claim ? "is-claimed" : ""}">
@@ -608,6 +613,10 @@ memberBody.addEventListener("click", async (event) => {
       saveClaims();
       setMessage(`${member.name} is back in the open queue.`);
     } else {
+      if (hasCurrentClaim()) {
+        setMessage("You can only claim one target at a time. Release your current target first.");
+        return;
+      }
       const callsign = getCallsign();
       claims[memberKey] = {
         claimedBy: callsign,
