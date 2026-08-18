@@ -61,6 +61,7 @@ let activeFilter = "all";
 let claims = {};
 let currentCallsign = "";
 let currentRoomSlug = "";
+let currentEnemyFaction = "";
 let roomAccessToken = "";
 let remoteMode = false;
 let claimPollTimerId = null;
@@ -226,6 +227,8 @@ function startClaimPolling() {
 
     try {
       await loadRemoteClaims();
+      const members = await loadFactionFromApi(currentEnemyFaction, apiKeyInput.value.trim());
+      setMembers(members);
       renderMembers();
     } catch (error) {
       console.warn("Shared dibs refresh failed.", error);
@@ -566,6 +569,7 @@ function showDemoData(silent = false) {
   stopClaimPolling();
   stopClaimEvents();
   roomAccessToken = "";
+  currentEnemyFaction = "";
   remoteMode = false;
   if (!silent) {
     setMessage("Rendering demo roster.");
@@ -597,6 +601,7 @@ form.addEventListener("submit", async (event) => {
     currentCallsign = "";
     const joinData = await joinRoom(apiKey);
     currentRoomSlug = joinData.room.slug;
+    currentEnemyFaction = joinData.room.enemyFaction;
     roomAccessToken = joinData.token;
     currentCallsign = joinData.player.name;
     const room = await loadRemoteClaims();
