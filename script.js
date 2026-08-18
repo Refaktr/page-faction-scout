@@ -42,7 +42,6 @@ const DEMO_DATA = {
 const form = document.getElementById("faction-form");
 const demoButton = document.getElementById("demo-button");
 const roomSlugInput = document.getElementById("room-slug");
-const roomPasswordInput = document.getElementById("room-password");
 const apiKeyInput = document.getElementById("api-key");
 const ffscouterApiKeyInput = document.getElementById("ffscouter-api-key");
 const memberBody = document.getElementById("member-body");
@@ -62,6 +61,7 @@ let fairFightLoadedForFaction = null;
 let activeFilter = "all";
 let claims = {};
 let currentCallsign = "";
+let roomAccessToken = "";
 let remoteMode = false;
 let claimPollTimerId = null;
 let claimEventSource = null;
@@ -77,7 +77,6 @@ const SORT_LABELS = {
 };
 
 const CLAIMS_STORAGE_PREFIX = "dibbs-claims-";
-const ROOM_PASSWORD_STORAGE_PREFIX = "dibbs-room-password-";
 const ROOM_CONTEXT_STORAGE_PREFIX = "dibbs-room-context-";
 const CLAIM_POLL_INTERVAL_MS = 60000;
 
@@ -121,17 +120,12 @@ function getCallsign() {
   return currentCallsign || "Demo hitter";
 }
 
-function getRoomPassword() {
-  return roomPasswordInput?.value.trim() || "";
-}
-
 function getRoomSlug() {
   return roomSlugInput?.value.trim().toLowerCase() || "";
 }
 
 function saveRoomContext() {
   const roomSlug = getRoomSlug();
-  sessionStorage.setItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${roomSlug}`, getRoomPassword());
   sessionStorage.setItem(`${ROOM_CONTEXT_STORAGE_PREFIX}${roomSlug}`, JSON.stringify({
     tornApiKey: apiKeyInput.value.trim(),
     ffscouterApiKey: ffscouterApiKeyInput.value.trim()
@@ -140,7 +134,6 @@ function saveRoomContext() {
 
 function restoreRoomContext() {
   const roomSlug = getRoomSlug();
-  roomPasswordInput.value = sessionStorage.getItem(`${ROOM_PASSWORD_STORAGE_PREFIX}${roomSlug}`) || "";
   const savedContext = JSON.parse(sessionStorage.getItem(`${ROOM_CONTEXT_STORAGE_PREFIX}${roomSlug}`) || "{}");
   apiKeyInput.value = savedContext.tornApiKey || "";
   ffscouterApiKeyInput.value = savedContext.ffscouterApiKey || "";
@@ -152,7 +145,7 @@ async function dibbsApiRequest(path, options = {}) {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      "X-Room-Password": getRoomPassword(),
+      Authorization: `Bearer ${roomAccessToken}`,
       ...(options.headers || {})
     }
   });
@@ -169,6 +162,19 @@ async function dibbsApiRequest(path, options = {}) {
   }
 
   return response.status === 204 ? null : response.json();
+}
+
+async function joinRoom(apiKey) {
+  const response = await fetch(`${DIBBS_API_BASE_URL}/api/rooms/${encodeURIComponent(getRoomSlug())}/join`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ tornApiKey: apiKey })
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `War room join failed (${response.status}).`);
+  }
+  return response.json();
 }
 
 async function loadRemoteClaims() {
@@ -230,12 +236,8 @@ function startClaimPolling() {
 
 async function startClaimEvents() {
   stopClaimEvents();
-  const tokenData = await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/event-token`, {
-    method: "POST",
-    body: "{}"
-  });
   const eventUrl = new URL(`/api/rooms/${encodeURIComponent(getRoomSlug())}/events`, DIBBS_API_BASE_URL);
-  eventUrl.searchParams.set("token", tokenData.token);
+  eventUrl.searchParams.set("token", roomAccessToken);
   claimEventSource = new EventSource(eventUrl);
   claimEventSource.addEventListener("claims-changed", async () => {
     try {
@@ -250,7 +252,13 @@ async function startClaimEvents() {
   };
   claimEventTokenRefreshTimerId = window.setTimeout(() => {
     if (remoteMode) {
-      startClaimEvents().catch((error) => console.warn("Unable to renew shared dibs live connection.", error));
+      joinRoom(apiKeyInput.value.trim())
+        .then((joinData) => {
+          roomAccessToken = joinData.token;
+          currentCallsign = joinData.player.name;
+          return startClaimEvents();
+        })
+        .catch((error) => console.warn("Unable to renew shared dibs live connection.", error));
     }
   }, 55 * 60 * 1000);
 }
@@ -274,21 +282,6 @@ async function loadFactionFromApi(factionName, apiKey) {
   return Object.values(membersData?.members || {});
 }
 
-async function loadAuthenticatedUser(apiKey) {
-  const response = await fetch("https://api.torn.com/v2/user?selections=profile", {
-    headers: { Accept: "application/json", Authorization: `ApiKey ${apiKey}` }
-  });
-  if (!response.ok) {
-    throw new Error(`Player lookup failed (${response.status}).`);
-  }
-
-  const data = await response.json();
-  const name = String(data?.profile?.name ?? data?.name ?? data?.user?.name ?? "").trim();
-  if (!name) {
-    throw new Error("Your Torn profile name could not be read from this API key.");
-  }
-  return name;
-}
 
 function updateClaimSummary() {
   const claimed = currentMembers.filter((member) => claims[getMemberKey(member)]).length;
@@ -525,6 +518,7 @@ async function loadFairFightForFaction(factionName, members, apiKey) {
 function showDemoData(silent = false) {
   stopClaimPolling();
   stopClaimEvents();
+  roomAccessToken = "";
   remoteMode = false;
   if (!silent) {
     setMessage("Rendering demo roster.");
@@ -544,19 +538,18 @@ form.addEventListener("submit", async (event) => {
 
   const apiKey = apiKeyInput?.value.trim() || "";
   const ffscouterApiKey = ffscouterApiKeyInput?.value.trim() || "";
-  if (!getRoomSlug() || !getRoomPassword() || !apiKey) {
-    setMessage("Enter a room, room password, and Torn API key.");
+  if (!getRoomSlug() || !apiKey) {
+    setMessage("Enter a room and Torn API key.");
     return;
   }
 
   try {
     remoteMode = true;
     currentCallsign = "";
-    const [room, playerName] = await Promise.all([
-      loadRemoteClaims(),
-      loadAuthenticatedUser(apiKey)
-    ]);
-    currentCallsign = playerName;
+    const joinData = await joinRoom(apiKey);
+    roomAccessToken = joinData.token;
+    currentCallsign = joinData.player.name;
+    const room = await loadRemoteClaims();
     const members = await loadFactionFromApi(room.enemyFaction, apiKey);
     setMembers(members);
     setSummary(room.enemyFaction, members.length, "Torn + shared dibs");
@@ -571,6 +564,7 @@ form.addEventListener("submit", async (event) => {
     }
   } catch (error) {
     remoteMode = false;
+    roomAccessToken = "";
     setMessage(error instanceof Error ? error.message : "Unable to load the war room.");
   }
 });
@@ -599,14 +593,12 @@ memberBody.addEventListener("click", async (event) => {
       const claim = claims[memberKey];
       if (actionButton.classList.contains("release-button")) {
         await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/claims/${encodeURIComponent(member.id)}`, {
-          method: "DELETE",
-          body: JSON.stringify({ callsign: getCallsign() })
+          method: "DELETE"
         });
         setMessage(`${member.name} is back in the open queue.`);
       } else {
         await dibbsApiRequest(`/api/rooms/${encodeURIComponent(getRoomSlug())}/claims/${encodeURIComponent(member.id)}`, {
-          method: "POST",
-          body: JSON.stringify({ callsign: getCallsign() })
+          method: "POST"
         });
         setMessage(`${member.name} is called by ${getCallsign()}.`);
       }
@@ -675,7 +667,6 @@ try {
   restoreRoomContext();
 } catch (error) {
   roomSlugInput.value = "";
-  roomPasswordInput.value = "";
   apiKeyInput.value = "";
   ffscouterApiKeyInput.value = "";
 }
