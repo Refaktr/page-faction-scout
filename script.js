@@ -356,6 +356,33 @@ function parseRelativeTimeToMinutes(value) {
   return amount * (multipliers[unit] || 1);
 }
 
+function getHospitalMinutesRemaining(member) {
+  const statusText = String(member.status?.description || "").toLowerCase();
+  if (!statusText.includes("hospital")) {
+    return Number.NaN;
+  }
+
+  const timerText = [
+    member.status?.details,
+    member.status?.timer,
+    member.status?.remaining,
+    member.hospital?.details,
+    member.hospital?.timer,
+    member.hospital?.remaining
+  ].filter(Boolean).join(" ");
+  const minuteMatch = timerText.match(/(\d+)\s*(?:m|min|mins|minute|minutes)\b/i);
+  if (minuteMatch) {
+    return Number(minuteMatch[1]);
+  }
+
+  const clockMatch = timerText.match(/\b(\d+):([0-5]\d)\b/);
+  if (clockMatch) {
+    return Number(clockMatch[1]) + Number(clockMatch[2]) / 60;
+  }
+
+  return Number.NaN;
+}
+
 function getSortValue(member, key) {
   switch (key) {
     case "name":
@@ -441,12 +468,15 @@ function renderMembers() {
         ? member.status.color
         : "muted";
       const lastAction = member.last_action?.relative ? `Last action ${member.last_action.relative}` : "";
-      const attackMarkup = isMine && member.id != null
+      const isHospital = statusDescription.toLowerCase().includes("hospital");
+      const hospitalMinutesRemaining = getHospitalMinutesRemaining(member);
+      const attackAvailableToEveryone = isHospital && hospitalMinutesRemaining <= 3;
+      const attackMarkup = (isMine || attackAvailableToEveryone) && member.id != null
         ? `<a class="attack-button" href="https://www.torn.com/page.php?sid=attack&user2ID=${encodeURIComponent(member.id)}" target="_blank" rel="noopener noreferrer">ATTACK</a>`
         : "";
       const claimMarkup = claim
-        ? `<div class="claim-state ${isMine ? "claim-mine" : ""}"><strong>${escapeHtml(claim.claimedBy)}</strong><small>${escapeHtml(claim.claimedAt)}</small>${isMine ? `${attackMarkup}<button type="button" class="release-button" data-member-key="${escapeHtml(memberKey)}">Release</button>` : "<small>Held by another hitter</small>"}</div>`
-        : `<button type="button" class="dibs-button" data-member-key="${escapeHtml(memberKey)}">Dibs</button>`;
+        ? `<div class="claim-state ${isMine ? "claim-mine" : ""}"><strong>${escapeHtml(claim.claimedBy)}</strong><small>${escapeHtml(claim.claimedAt)}</small>${attackMarkup}${isMine ? `<button type="button" class="release-button" data-member-key="${escapeHtml(memberKey)}">Release</button>` : "<small>Held by another hitter</small>"}</div>`
+        : `<div class="claim-actions">${attackMarkup}<button type="button" class="dibs-button" data-member-key="${escapeHtml(memberKey)}"${isHospital ? " disabled" : ""}>Dibs</button></div>`;
 
       return `
         <tr class="${claim ? "is-claimed" : ""}">
@@ -606,6 +636,14 @@ memberBody.addEventListener("click", async (event) => {
   const member = currentMembers.find((entry) => getMemberKey(entry) === memberKey);
   if (!member) {
     return;
+  }
+
+  if (!actionButton.classList.contains("release-button") && !actionButton.classList.contains("attack-button")) {
+    const isHospital = String(member.status?.description || "").toLowerCase().includes("hospital");
+    if (isHospital) {
+      setMessage("This target is in hospital and cannot be claimed.");
+      return;
+    }
   }
 
   try {
