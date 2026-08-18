@@ -165,13 +165,20 @@ async function dibbsApiRequest(path, options = {}) {
 }
 
 async function joinRoom(apiKey) {
-  const response = await fetch(`${DIBBS_API_BASE_URL}/api/rooms/${encodeURIComponent(getRoomSlug())}/join`, {
+  const roomSlug = getRoomSlug();
+  const endpoint = roomSlug
+    ? `/api/rooms/${encodeURIComponent(roomSlug)}/join`
+    : "/api/rooms/discover";
+  const response = await fetch(`${DIBBS_API_BASE_URL}${endpoint}`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ tornApiKey: apiKey })
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    if (response.status === 404 && !roomSlug) {
+      throw new Error("Faction room discovery is unavailable on the deployed API. Redeploy the updated DATABASE server, or enter a room slug.");
+    }
     throw new Error(body.error || `War room join failed (${response.status}).`);
   }
   return response.json();
@@ -543,8 +550,8 @@ form.addEventListener("submit", async (event) => {
 
   const apiKey = apiKeyInput?.value.trim() || "";
   const ffscouterApiKey = ffscouterApiKeyInput?.value.trim() || "";
-  if (!getRoomSlug() || !apiKey) {
-    setMessage("Enter a room and Torn API key.");
+  if (!apiKey) {
+    setMessage("Enter a Torn API key.");
     return;
   }
 
@@ -552,6 +559,7 @@ form.addEventListener("submit", async (event) => {
     remoteMode = true;
     currentCallsign = "";
     const joinData = await joinRoom(apiKey);
+    roomSlugInput.value = joinData.room.slug;
     roomAccessToken = joinData.token;
     currentCallsign = joinData.player.name;
     const room = await loadRemoteClaims();
@@ -672,7 +680,7 @@ sortButtons.forEach((button) => {
 
 updateSortIndicators();
 try {
-  roomSlugInput.value = new URLSearchParams(window.location.search).get("room") || "war-01";
+  roomSlugInput.value = new URLSearchParams(window.location.search).get("room") || "";
   restoreRoomContext();
 } catch (error) {
   roomSlugInput.value = "";
